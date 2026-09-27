@@ -717,12 +717,6 @@ enum AppText {
         "pipMediaPaused": "媒体已暂停", "pipBack5Seconds": "后退 5 秒", "pipForward5Seconds": "快进 5 秒", "pipToggleCaptions": "切换字幕", "pipPause": "暂停", "pipPlay": "播放",
         "pipAccessibilityRequired": "需要辅助功能权限才能在其他 App 中拦截全局快捷键。", "pipGrantAccessibility": "授权辅助功能…", "pipOpenAccessibility": "打开辅助功能设置",
         "windowSwitcher": "窗口切换", "windowSwitcherTitle": "窗口切换器", "windowSwitcherSubtitle": "使用 ⌥Tab 在所有应用窗口之间快速切换。按住 Option 连续切换，松开后聚焦选中的窗口。",
-        "diagnostics": "诊断", "resourceMonitor": "资源监控", "resourceRefresh": "刷新采样",
-        "resourceMemory": "内存：%@ MB", "resourceCPU": "CPU：%@%%",
-        "resourceActiveFeatures": "已纳管功能：%@", "resourceTasks": "已纳管任务：%d", "resourceObservers": "已跟踪观察者：%d",
-        "resourceEventTaps": "事件监听：%d", "resourceCaptures": "采集会话：%d", "resourceIconCache": "图标缓存：%d", "resourceWindowCache": "窗口缓存：%d",
-        "resourceTimers": "活动计时器：%d", "resourceThreads": "线程：%@", "resourceCacheBytes": "缓存估算（图标/缩略图/已加载剪贴板）：%@ / %@ / %@ MB",
-        "resourceUnavailable": "—", "resourceNone": "无",
         "windowSwitcherShortcut": "⌥Tab",
         "windowSwitcherIncludeMinimized": "显示最小化窗口", "windowSwitcherIncludeHidden": "显示已隐藏应用的窗口",
         "windowSwitcherShowThumbnails": "显示窗口缩略图（需要屏幕录制权限）", "windowSwitcherShowTitles": "显示窗口标题",
@@ -1642,12 +1636,6 @@ enum AppText {
             "pipMediaPaused": "Media paused", "pipBack5Seconds": "Back 5 seconds", "pipForward5Seconds": "Forward 5 seconds", "pipToggleCaptions": "Toggle captions", "pipPause": "Pause", "pipPlay": "Play",
             "pipAccessibilityRequired": "Accessibility permission is required to intercept the global shortcut in other apps.", "pipGrantAccessibility": "Grant Accessibility…", "pipOpenAccessibility": "Open Accessibility Settings",
         "windowSwitcher": "Window Switcher", "windowSwitcherTitle": "Window Switcher", "windowSwitcherSubtitle": "Quickly switch between windows across applications with ⌥Tab. Hold Option to keep cycling, then release it to focus the selected window.",
-            "diagnostics": "Diagnostics", "resourceMonitor": "Resource Monitor", "resourceRefresh": "Refresh Sample",
-            "resourceMemory": "Memory: %@ MB", "resourceCPU": "CPU: %@%%",
-            "resourceActiveFeatures": "Managed features: %@", "resourceTasks": "Managed tasks: %d", "resourceObservers": "Tracked observers: %d",
-            "resourceEventTaps": "Event taps: %d", "resourceCaptures": "Capture sessions: %d", "resourceIconCache": "Icon cache: %d", "resourceWindowCache": "Window cache: %d",
-            "resourceTimers": "Active timers: %d", "resourceThreads": "Threads: %@", "resourceCacheBytes": "Estimated cache (icons/thumbnails/loaded clipboard): %@ / %@ / %@ MB",
-            "resourceUnavailable": "—", "resourceNone": "None",
             "windowSwitcherShortcut": "⌥Tab",
             "windowSwitcherIncludeMinimized": "Show minimized windows", "windowSwitcherIncludeHidden": "Show windows from hidden applications",
             "windowSwitcherShowThumbnails": "Show window thumbnails (requires Screen Recording)", "windowSwitcherShowTitles": "Show window titles",
@@ -5203,7 +5191,6 @@ private struct CPUMonitorMenuSection: View {
 struct MenuBarView: View {
     @EnvironmentObject private var model: MacPilotModel
     @Environment(\.openWindow) private var openWindow
-    @StateObject private var resources = ResourceMonitor()
     @ObservedObject var awake: AwakeSessionManager
     @ObservedObject var pictureInPicture: PictureInPictureModel
     @ObservedObject var screenRecording: ScreenRecordingModel
@@ -5331,9 +5318,6 @@ struct MenuBarView: View {
             model.requestSection(.settings)
             showMainWindow()
         }
-        Menu(model.t("diagnostics")) {
-            ResourceMonitorMenu(monitor: resources)
-        }
         Button(model.t("settings")) { model.requestSection(.settings); showMainWindow() }
         Button(model.t("showApp"), action: showMainWindow)
         Button(model.t("quitApp")) { NSApp.terminate(nil) }
@@ -5366,56 +5350,6 @@ struct MenuBarView: View {
         NSApp.activate(ignoringOtherApps: true)
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
-    }
-}
-
-private struct ResourceMonitorMenu: View {
-    @EnvironmentObject private var model: MacPilotModel
-    @ObservedObject var monitor: ResourceMonitor
-
-    var body: some View {
-        let sample = monitor.snapshot
-        let memory = sample.memoryBytes.map { String(format: "%.1f", Double($0) / 1_048_576) }
-            ?? model.t("resourceUnavailable")
-        let cpu = sample.cpuPercent.map { String(format: "%.2f", $0) }
-            ?? model.t("resourceUnavailable")
-        let threads = sample.threadCount.map(String.init) ?? model.t("resourceUnavailable")
-        let iconBytes = String(format: "%.1f", Double(sample.estimatedIconCacheBytes) / 1_048_576)
-        let thumbnailBytes = String(format: "%.1f", Double(sample.estimatedThumbnailCacheBytes) / 1_048_576)
-        let clipboardBytes = sample.loadedClipboardContentBytes.map { String(format: "%.1f", Double($0) / 1_048_576) }
-            ?? model.t("resourceUnavailable")
-        let localizedFeatures = sample.activeFeatures.compactMap(MainSection.init(rawValue:))
-            .map { model.t($0.titleKey) }
-        let features = localizedFeatures.isEmpty
-            ? model.t("resourceNone")
-            : localizedFeatures.joined(separator: ", ")
-        Group {
-            Text(model.t("resourceMemory", memory))
-            Text(model.t("resourceCPU", cpu))
-            Text(model.t("resourceActiveFeatures", features))
-            Text(model.t("resourceTasks", sample.managedTasks))
-            Text(model.t("resourceObservers", sample.trackedObservers))
-            Text(model.t("resourceTimers", sample.activeTimers))
-            Text(model.t("resourceThreads", threads))
-            Text(model.t("resourceEventTaps", sample.eventTaps))
-            Text(model.t("resourceCaptures", sample.activeCaptures))
-            Text(model.t("resourceIconCache", sample.iconCacheEntries))
-            Text(model.t("resourceWindowCache", sample.windowCacheEntries))
-            Text(model.t("resourceCacheBytes", iconBytes, thumbnailBytes, clipboardBytes))
-            Divider()
-            Button(model.t("resourceRefresh")) {
-                monitor.refresh(
-                    lifecycle: model.featureLifecycle,
-                    runtimeCounts: model.resourceRuntimeCounts
-                )
-            }
-        }
-        .onAppear {
-            monitor.startSampling(lifecycle: model.featureLifecycle) {
-                model.resourceRuntimeCounts
-            }
-        }
-        .onDisappear { monitor.stopSampling() }
     }
 }
 
