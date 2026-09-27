@@ -41,7 +41,22 @@ final class RemoteTrackpadModel: ObservableObject {
     }
     /// Live pressure telemetry for the debug overlay, refreshed a few times a
     /// second only while the overlay is enabled.
-    @Published var pressureDebug: (radius: CGFloat, score: Double, state: String)?
+    @Published var pressureDebug: (radius: CGFloat, radiusDelta: CGFloat, durationMs: Int, velocity: Double, score: Double, state: String)?
+    /// How far down the connected Mac's pressure support goes.
+    private enum PressureTier {
+        case stream   // pressBegin / pressUpdate / pressEnd
+        case single   // one-shot graded press
+        case plain    // clicks only
+    }
+
+    private var pressureTier: PressureTier {
+        if appModel?.supportsInputPressureStream == true { return .stream }
+        if appModel?.supportsInputPressure == true { return .single }
+        return .plain
+    }
+
+    /// Pressure of the last legacy press-down, re-reported on release.
+    private var lastLegacyPressPressure: Double = 1
     @Published private(set) var keyboardActive = false {
         didSet { syncInterfaceRotation() }
     }
@@ -404,6 +419,33 @@ final class RemoteTrackpadModel: ObservableObject {
                 }
                 if action == .up, keyboardActive {
                     keyboardRecheckPending = true
+                }
+
+            case let .pressBegan(button, pressure):
+                switch pressureTier {
+                case .stream:
+                    append(.pressBegin(button: button, pressure: pressure))
+                case .single:
+                    lastLegacyPressPressure = pressure
+                    append(.press(button: button, action: .down, pressure: pressure))
+                case .plain:
+                    append(.click(button: button, action: .down))
+                }
+                hapticAfterSend = settings.pressureFeedback
+
+            case let .pressGraded(pressure):
+                if pressureTier == .stream {
+                    append(.pressUpdate(pressure: pressure))
+                }
+
+            case let .pressEnded(button):
+                switch pressureTier {
+                case .stream:
+                    append(.pressEnd(button: button))
+                case .single:
+                    append(.press(button: button, action: .up, pressure: lastLegacyPressPressure))
+                case .plain:
+                    append(.click(button: button, action: .up))
                 }
             case .requestKeyboard:
                 requestKeyboard()

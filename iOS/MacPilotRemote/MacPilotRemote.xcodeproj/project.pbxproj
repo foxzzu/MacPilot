@@ -19,6 +19,7 @@
 		42668DE5A90C3F9737AD06C7 /* TrackpadContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D7C09D541D091153DBD26AA /* TrackpadContainerView.swift */; };
 		4565B7126473EB3C4AD8F9AA /* AccelerationCurve.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5AAC04F84819EBB0BDBC6B /* AccelerationCurve.swift */; };
 		48A088903922D3AF98000B56 /* InterfaceOrientationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 785EB92B352DD9B4153B1A56 /* InterfaceOrientationController.swift */; };
+		4D83CC38723DADECD8C365DD /* TrackpadClickSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88731EE963FEAFE686E6DAF3 /* TrackpadClickSound.swift */; };
 		52E3E061673C185BCB2D7463 /* TrackpadSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCFB309710B660CAEDF2CF72 /* TrackpadSettingsView.swift */; };
 		534B34773F1A696B2114D81A /* TrackpadState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 996A9B575EF823EFF98F1EB8 /* TrackpadState.swift */; };
 		58102F1CE9508E1A18B14846 /* RemoteSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE506F7AEC00BC4D65847C12 /* RemoteSettingsView.swift */; };
@@ -33,11 +34,13 @@
 		9A1F5568F3ECD63FDD274EED /* TouchProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D152E96DBE715090384BAA76 /* TouchProcessor.swift */; };
 		9C4A299E2EC608FE844CBF24 /* RemoteKeyboardInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BADBB71C31CBC31DE93557E /* RemoteKeyboardInputView.swift */; };
 		ABAB1A3DD21B1D9F93831A4A /* MacPilotRemoteProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 2DA6CC718265164CF50E009F /* MacPilotRemoteProtocol */; };
+		AE22ED3FC0D9F79938EAFDB0 /* TouchHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F191E81E8CA9B2CCD4CF79A9 /* TouchHistory.swift */; };
 		BBA8EB473A8DFC5AFF6FC54E /* MacPilotRemoteTransport in Frameworks */ = {isa = PBXBuildFile; productRef = EC71CA884A51DA6FA3C258DF /* MacPilotRemoteTransport */; };
 		C0F29AE38E0B010578AAD67D /* RemoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A556F1AAEC7A9B11C37B641 /* RemoteModels.swift */; };
 		CC59413625ABC1AAEE0F80AA /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21C2AB621EFBC8E6529C0E5 /* RootView.swift */; };
 		CDA789979157BEA48DED3C32 /* InertiaProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99645C5EFB4EBEF5B3AD89F0 /* InertiaProcessor.swift */; };
 		D9570EAFD947E6C943C5609E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C3C7D3A57D31F56E250816 /* HomeView.swift */; };
+		DD490523AAB98454CCDDA523 /* PressGestureRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36953057505FD14ED272AED /* PressGestureRecognizer.swift */; };
 		EFC379A087AD05F1A8951B4D /* TrackpadOrientationCompass.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1BF7246E89AE5367E76D9EF /* TrackpadOrientationCompass.swift */; };
 		F15537871D1809E163DF01BC /* GestureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D1267A79F7F5D73F8C52E77 /* GestureEngine.swift */; };
 /* End PBXBuildFile section */
@@ -71,6 +74,7 @@
 		785EB92B352DD9B4153B1A56 /* InterfaceOrientationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterfaceOrientationController.swift; sourceTree = "<group>"; };
 		7890B51F3A461DD34A2BF5C8 /* RemoteBLEPeripheral.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteBLEPeripheral.swift; sourceTree = "<group>"; };
 		82CA21A9B57090EDDD6FFE1B /* MacPilotRemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPilotRemoteApp.swift; sourceTree = "<group>"; };
+		88731EE963FEAFE686E6DAF3 /* TrackpadClickSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadClickSound.swift; sourceTree = "<group>"; };
 		8BADBB71C31CBC31DE93557E /* RemoteKeyboardInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteKeyboardInputView.swift; sourceTree = "<group>"; };
 		8D425482A5A46A96A727A35D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		94F1B37F9E91D0638CF6DE1D /* TrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadView.swift; sourceTree = "<group>"; };
@@ -87,6 +91,8 @@
 		D110E3CC36E64E72A3521A8C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D152E96DBE715090384BAA76 /* TouchProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchProcessor.swift; sourceTree = "<group>"; };
 		E21C2AB621EFBC8E6529C0E5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		E36953057505FD14ED272AED /* PressGestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressGestureRecognizer.swift; sourceTree = "<group>"; };
+		F191E81E8CA9B2CCD4CF79A9 /* TouchHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchHistory.swift; sourceTree = "<group>"; };
 		FCFB309710B660CAEDF2CF72 /* TrackpadSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -162,7 +168,9 @@
 				BE5AAC04F84819EBB0BDBC6B /* AccelerationCurve.swift */,
 				4D1267A79F7F5D73F8C52E77 /* GestureEngine.swift */,
 				99645C5EFB4EBEF5B3AD89F0 /* InertiaProcessor.swift */,
+				E36953057505FD14ED272AED /* PressGestureRecognizer.swift */,
 				B8E51007DA7A300933D953C5 /* PressureIntentEngine.swift */,
+				F191E81E8CA9B2CCD4CF79A9 /* TouchHistory.swift */,
 				D152E96DBE715090384BAA76 /* TouchProcessor.swift */,
 				A11CCEAC5B50B59CC42724C3 /* VelocityCalculator.swift */,
 			);
@@ -206,6 +214,7 @@
 				785EB92B352DD9B4153B1A56 /* InterfaceOrientationController.swift */,
 				82CA21A9B57090EDDD6FFE1B /* MacPilotRemoteApp.swift */,
 				2664C90B50B85054CF47D9B3 /* RemoteAppModel.swift */,
+				88731EE963FEAFE686E6DAF3 /* TrackpadClickSound.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -415,6 +424,7 @@
 				1CAEA4510A03902701764DC2 /* MacPilotRemoteApp.swift in Sources */,
 				36BB935C02EC8519CE7DAFB1 /* PairedMacStore.swift in Sources */,
 				1FDC655EF74A5B0A9E892D40 /* PairingSheetView.swift in Sources */,
+				DD490523AAB98454CCDDA523 /* PressGestureRecognizer.swift in Sources */,
 				077A2BDE51FBE26CE12D7627 /* PressureIntentEngine.swift in Sources */,
 				2A4D3DB2192AC62F75C6B89D /* RemoteAppModel.swift in Sources */,
 				7F9A392EE7B644AB9A987F7A /* RemoteBLEPeripheral.swift in Sources */,
@@ -427,7 +437,9 @@
 				10AD0F90E657210C6CFE9F26 /* RemoteText.swift in Sources */,
 				7AD15026D75C2BBA62B0B152 /* RemoteTrackpadModel.swift in Sources */,
 				CC59413625ABC1AAEE0F80AA /* RootView.swift in Sources */,
+				AE22ED3FC0D9F79938EAFDB0 /* TouchHistory.swift in Sources */,
 				9A1F5568F3ECD63FDD274EED /* TouchProcessor.swift in Sources */,
+				4D83CC38723DADECD8C365DD /* TrackpadClickSound.swift in Sources */,
 				42668DE5A90C3F9737AD06C7 /* TrackpadContainerView.swift in Sources */,
 				EFC379A087AD05F1A8951B4D /* TrackpadOrientationCompass.swift in Sources */,
 				52E3E061673C185BCB2D7463 /* TrackpadSettingsView.swift in Sources */,
@@ -520,7 +532,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -541,7 +553,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

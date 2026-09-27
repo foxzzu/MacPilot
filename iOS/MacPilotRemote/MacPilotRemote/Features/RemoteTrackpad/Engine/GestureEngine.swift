@@ -13,6 +13,11 @@ enum GestureOutput: Equatable {
     case cursor(dx: Double, dy: Double, dragging: Bool, time: TimeInterval)
     /// `pressure` is 1 unless the pressure simulation is grading this click.
     case click(button: RemoteInputButton, action: RemoteInputAction, pressure: Double)
+    /// The continuous press: button down while the finger is still on the
+    /// glass, graded as the contact deepens, released on lift.
+    case pressBegan(button: RemoteInputButton, pressure: Double)
+    case pressGraded(pressure: Double)
+    case pressEnded(button: RemoteInputButton)
     /// Two-finger scrolling in finger pixels, content direction.
     case scroll(dx: Double, dy: Double, time: TimeInterval)
     /// The fingers lifted mid-scroll; carries the finger velocity (points/s)
@@ -26,7 +31,8 @@ enum GestureOutput: Equatable {
 ///
 /// - one finger: moves the cursor; a quick quiet tap clicks; two quick taps in
 ///   a row make a double click; a second tap held (or moved) starts a drag
-///   until the finger lifts.
+///   until the finger lifts. Under pressure simulation a firm, still, widening
+///   touch actuates the button early — the press — and grades while held.
 /// - two fingers: centroid motion scrolls; a quiet short two-finger touch is a
 ///   right click.
 ///
@@ -36,10 +42,9 @@ struct GestureEngine {
     var tapToClick: Bool = true
     var keyboardEnabled: Bool = false
     var naturalScrolling: Bool = true
-    /// When on, contact-patch growth grades tap pressure and a firm
-    /// press-and-hold actuates the button early (a trackpad's physical
-    /// click). Off means every click leaves at full pressure, exactly as
-    /// before, and no radius is scored.
+    /// When on, a per-finger `PressGestureRecognizer` watches the contact
+    /// patch; off, no recognizer exists and every click leaves at full
+    /// pressure exactly as before.
     var pressureMode: PressureMode = .off
 
     /// Tunables. Generous slop keeps resting fingers from drifting the cursor;
@@ -59,10 +64,9 @@ struct GestureEngine {
         /// This finger is the second tap of a potential tap-drag pair.
         var armedForDrag: Bool
         var dragging: Bool
-        /// Contact patch at touchdown and at the newest sample: their ratio
-        /// is the pressure signal. Zero outside pressure simulation.
-        var startRadius: CGFloat = 0
-        var lastRadius: CGFloat = 0
+        /// Present only while pressure simulation is on: watches the contact
+        /// patch and actuates the press when the score crosses the bar.
+        var press: PressGestureRecognizer?
     }
 
     private struct TwoFinger {
@@ -122,6 +126,11 @@ struct GestureEngine {
         } else {
             armed = false
         }
+        var press: PressGestureRecognizer?
+        if pressureMode != .off {
+            press = PressGestureRecognizer(config: PressureConfig.config(for: pressureMode))
+            press?.begin(first)
+        }
         mode = .oneFinger(
             OneFinger(
                 start: first.position,
@@ -130,8 +139,7 @@ struct GestureEngine {
                 moved: false,
                 armedForDrag: armed,
                 dragging: false,
-                startRadius: pressureMode == .off ? 0 : first.majorRadius,
-                lastRadius: pressureMode == .off ? 0 : first.majorRadius
+                press: press
             )
         )
         return []
@@ -151,8 +159,10 @@ struct GestureEngine {
                 let dx = sample.position.x - finger.position.x
                 let dy = sample.position.y - finger.position.y
                 finger.position = sample.position
-                if sample.majorRadius > 0 {
-                    finger.lastRadius = sample.majorRadius
+                // The recognizer sees every sample, even inside the movement
+                // slop: pressing in place still widens the contact patch.
+                if let event = finger.press?.update(sample) {
+                    outputs.append(Self.pressOutput(event))
                 }
                 if !finger.moved,
                    hypot(finger.position.x - finger.start.x, finger.position.y - finger.start.y) > Self.movementSlop {
@@ -203,12 +213,18 @@ struct GestureEngine {
             guard remaining == 0 else { return [] }
             mode = .idle
             let duration = time - finger.startTime
-            if let sample = samples.first, sample.majorRadius > 0 {
-                finger.lastRadius = sample.majorRadius
-            }
             if finger.dragging {
                 lastTapEndedAt = nil
+                // A recognized press releases through the press stream; a
+                // double-tap drag releases through the plain click.
+                if finger.press?.isActive == true {
+                    _ = finger.press?.end(now: time)
+                    return [.pressEnded(button: .left)]
+                }
                 return [.click(button: .left, action: .up, pressure: 1)]
+            }
+            if let sample = samples.first, finger.press?.isActive == false {
+                _ = finger.press?.update(sample)
             }
             let quiet = !finger.moved && duration <= Self.tapMaximumDuration
             guard quiet, tapToClick else {
@@ -221,12 +237,12 @@ struct GestureEngine {
             // An armed tap that holds or moves becomes a drag instead. Every
             // tap also asks whether the pointer landed on text — the same
             // deal as clicking a field with a real mouse. Under pressure
-            // simulation the contact growth grades the click.
-            let pressure = PressureIntentEngine.tapPressure(
-                startRadius: finger.startRadius,
-                endRadius: finger.lastRadius,
-                mode: pressureMode
-            )
+            // simulation the recognizer's final score grades the pair.
+            var pressure = 1.0
+            if finger.press != nil {
+                finger.press?.end(now: time)
+                pressure = finger.press?.lastPressure ?? 1
+            }
             var outputs: [GestureOutput] = [
                 .click(button: .left, action: .down, pressure: pressure),
                 .click(button: .left, action: .up, pressure: pressure),
@@ -259,10 +275,14 @@ struct GestureEngine {
 
     mutating func handleCancelled(remaining: Int) -> [GestureOutput] {
         switch mode {
-        case .oneFinger(let finger):
+        case .oneFinger(var finger):
             if finger.dragging, remaining == 0 {
                 mode = .idle
                 lastTapEndedAt = nil
+                if finger.press?.isActive == true {
+                    _ = finger.press?.end(now: ProcessInfo.processInfo.systemUptime)
+                    return [.pressEnded(button: .left)]
+                }
                 return [.click(button: .left, action: .up, pressure: 1)]
             }
             if remaining == 0 { mode = .idle }
@@ -278,7 +298,7 @@ struct GestureEngine {
 
     /// Runs once per flush cycle so gestures can complete without a touch
     /// callback: the tap-drag hold arming, and under pressure simulation the
-    /// deep press that actuates the button while the finger is still.
+    /// press actuation while the finger is still on the glass.
     mutating func tick(time: TimeInterval) -> [GestureOutput] {
         if case .oneFinger(var finger) = mode,
            finger.armedForDrag, !finger.dragging,
@@ -289,19 +309,17 @@ struct GestureEngine {
         }
         if case .oneFinger(var finger) = mode,
            pressureMode != .off, !finger.armedForDrag, !finger.dragging, !finger.moved,
-           time - finger.startTime >= PressureIntentEngine.pressHoldDuration,
-           PressureIntentEngine.isPress(
-                startRadius: finger.startRadius,
-                currentRadius: finger.lastRadius,
-                heldDuration: time - finger.startTime,
-                mode: pressureMode
-           ) {
-            // A firm, still, widening touch is the trackpad's physical
-            // click: the button goes down now and releases on lift, so
-            // holding turns into a drag without the double-tap.
+           finger.press != nil {
+            // The press may actuate while the finger never left the glass:
+            // the button is down from this frame, and motion from here on
+            // drags.
+            guard let event = finger.press?.tick(now: time) else {
+                mode = .oneFinger(finger)
+                return []
+            }
             finger.dragging = true
             mode = .oneFinger(finger)
-            return [.click(button: .left, action: .down, pressure: 1)]
+            return [Self.pressOutput(event)]
         }
         return []
     }
@@ -315,28 +333,16 @@ struct GestureEngine {
 
     /// Pressure simulation telemetry for the debug overlay: nil while no
     /// finger is down or the simulation is off.
-    func pressureDebugSnapshot(time: TimeInterval) -> (radius: CGFloat, score: Double, state: String)? {
-        guard case .oneFinger(let finger) = mode, pressureMode != .off else { return nil }
-        let held = time - finger.startTime
-        let score = Double(PressureIntentEngine.growthRatio(
-            startRadius: finger.startRadius,
-            endRadius: finger.lastRadius
-        ))
-        let state: String
-        if finger.dragging {
-            state = finger.armedForDrag ? "drag" : "pressed"
-        } else if PressureIntentEngine.isPress(
-            startRadius: finger.startRadius,
-            currentRadius: finger.lastRadius,
-            heldDuration: held,
-            mode: pressureMode
-        ) {
-            state = "pressIntent"
-        } else if finger.moved {
-            state = "moving"
-        } else {
-            state = "tap"
+    func pressureDebugSnapshot(time: TimeInterval) -> (radius: CGFloat, radiusDelta: CGFloat, durationMs: Int, velocity: Double, score: Double, state: String)? {
+        guard case .oneFinger(let finger) = mode, let press = finger.press else { return nil }
+        return press.snapshot(now: time)
+    }
+
+    private static func pressOutput(_ event: PressGestureEvent) -> GestureOutput {
+        switch event {
+        case let .began(pressure): return .pressBegan(button: .left, pressure: pressure)
+        case let .graded(pressure): return .pressGraded(pressure: pressure)
+        case .ended: return .pressEnded(button: .left)
         }
-        return (radius: finger.lastRadius, score: score, state: state)
     }
 }

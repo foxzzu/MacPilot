@@ -84,6 +84,9 @@ final class RemoteConnectionManager {
     /// The Mac reads graded pressure from press events; without it the
     /// trackpad downgrades every press to a plain click.
     var supportsInputPressure: Bool { serverCapabilities.contains(.inputPressure) }
+    /// The Mac understands the continuous press stream, so the button can
+    /// actuate while the finger is still down.
+    var supportsInputPressureStream: Bool { serverCapabilities.contains(.inputPressureStream) }
     /// True once the link is up, even if the handshake is still running. The
     /// race uses it to tell "still dialling" from "mid handshake", which decides
     /// whether an attempt may still be cut short.

@@ -11,12 +11,18 @@ public enum RemoteInputEvent: Equatable, Sendable {
     /// `buttons` carries the buttons held while moving (left = drag).
     case move(dx: Double, dy: Double, buttons: RemoteInputButtons)
     case click(button: RemoteInputButton, action: RemoteInputAction)
-    /// A click that carries simulated pressure (0…1), the trackpad module's
-    /// answer to Mac trackpad presses: touch area and hold duration on the
-    /// phone become a graded pressure value here. Receivers without pressure
-    /// support simply never see this event — senders gate it on the
-    /// `.inputPressure` capability.
+    /// A click that carries simulated pressure (0…1) in one shot. Kept for
+    /// senders talking to Macs that advertise `.inputPressure` but not the
+    /// streaming variant.
     case press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double)
+    /// The press as a continuous process, the way a real trackpad click is:
+    /// the button goes down while the finger is still on the glass, the
+    /// pressure grades as the contact deepens, and the release comes when the
+    /// finger lifts. Gated on the `.inputPressureStream` capability.
+    case pressBegin(button: RemoteInputButton, pressure: Double)
+    /// Pressure update for the button taken down by `pressBegin`.
+    case pressUpdate(pressure: Double)
+    case pressEnd(button: RemoteInputButton)
     /// Two-finger scrolling in finger pixels, natural direction: the values
     /// follow the fingers, so content follows the fingers the way macOS does.
     case scroll(dx: Double, dy: Double)
@@ -69,6 +75,9 @@ public struct RemoteInputBatch: Sendable, Equatable {
 /// events:  move:   u8 kind=1 | i16 dx | i16 dy | u8 buttons
 ///          click:  u8 kind=2 | u8 button | u8 action
 ///          press:  u8 kind=4 | u8 button | u8 action | u8 pressure (0…255 → 0…1)
+///          pressBegin:  u8 kind=5 | u8 button | u8 pressure
+///          pressUpdate: u8 kind=6 | u8 pressure
+///          pressEnd:    u8 kind=7 | u8 button
 ///          scroll: u8 kind=3 | i16 dx | i16 dy
 /// ```
 ///
@@ -106,6 +115,16 @@ public enum RemoteInputBatchCodec {
                 data.append(button.rawValue)
                 data.append(action.rawValue)
                 data.append(Self.pressureByte(pressure))
+            case let .pressBegin(button, pressure):
+                data.append(5)
+                data.append(button.rawValue)
+                data.append(Self.pressureByte(pressure))
+            case let .pressUpdate(pressure):
+                data.append(6)
+                data.append(Self.pressureByte(pressure))
+            case let .pressEnd(button):
+                data.append(7)
+                data.append(button.rawValue)
             case let .scroll(dx, dy):
                 data.append(3)
                 data.append(contentsOf: bigEndian(fixedPoint(dx)))
@@ -154,6 +173,18 @@ public enum RemoteInputBatchCodec {
                     action: action,
                     pressure: Self.pressure(fromByte: try reader.readByte())
                 ))
+            case 5:
+                guard let button = RemoteInputButton(rawValue: try reader.readByte()) else {
+                    throw RemoteProtocolError.invalidMessage
+                }
+                events.append(.pressBegin(button: button, pressure: Self.pressure(fromByte: try reader.readByte())))
+            case 6:
+                events.append(.pressUpdate(pressure: Self.pressure(fromByte: try reader.readByte())))
+            case 7:
+                guard let button = RemoteInputButton(rawValue: try reader.readByte()) else {
+                    throw RemoteProtocolError.invalidMessage
+                }
+                events.append(.pressEnd(button: button))
             case 3:
                 let dx = try reader.readFixedPoint()
                 let dy = try reader.readFixedPoint()

@@ -936,6 +936,9 @@ final class RemoteAppModel: ObservableObject {
     /// Whether the connected Mac reads graded pressure from press events.
     var supportsInputPressure: Bool { connection.supportsInputPressure }
 
+    /// Whether the connected Mac understands the continuous press stream.
+    var supportsInputPressureStream: Bool { connection.supportsInputPressureStream }
+
     /// Quality of the link currently carrying the session, from the trackpad's
     /// point of view. AWDL rides the same network transport — the race that
     /// picks the session already prefers the fastest path, and AWDL is
@@ -1099,7 +1102,13 @@ final class RemoteAppModel: ObservableObject {
 enum Haptics {
     static func impact() {
         #if canImport(UIKit)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // iPads carry no Taptic engine; the synthesized trackpad tap stands
+        // in for the buzz so the click still answers the finger.
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            TrackpadClickSound.play()
+        } else {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
         #endif
     }
 

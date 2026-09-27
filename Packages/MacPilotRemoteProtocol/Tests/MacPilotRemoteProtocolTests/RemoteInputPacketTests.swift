@@ -83,6 +83,45 @@ struct RemoteInputBatchCodecTests {
         }
     }
 
+    @Test("press stream events round trip")
+    func pressStreamRoundTrip() throws {
+        let batch = RemoteInputBatch(
+            timestampMilliseconds: 9,
+            events: [
+                .pressBegin(button: .left, pressure: 0.55),
+                .pressUpdate(pressure: 0.9),
+                .pressUpdate(pressure: 1.0),
+                .pressEnd(button: .left),
+            ]
+        )
+        let decoded = try RemoteInputBatchCodec.decode(try RemoteInputBatchCodec.encode(batch))
+        #expect(decoded.events.count == 4)
+        guard case let .pressBegin(_, beginPressure) = decoded.events[0] else {
+            Issue.record("expected pressBegin")
+            return
+        }
+        #expect(abs(beginPressure - 0.55) < 0.01)
+        #expect(decoded.events[2] == .pressUpdate(pressure: 1.0))
+        #expect(decoded.events[3] == .pressEnd(button: .left))
+    }
+
+    @Test("kind-5/6/7 truncation throws, never traps")
+    func truncatedPressStreamThrows() throws {
+        let encoded = try RemoteInputBatchCodec.encode(RemoteInputBatch(
+            timestampMilliseconds: 1,
+            events: [
+                .pressBegin(button: .left, pressure: 0.5),
+                .pressUpdate(pressure: 0.8),
+                .pressEnd(button: .left),
+            ]
+        ))
+        for length in 0..<encoded.count {
+            #expect(throws: RemoteProtocolError.self) {
+                try RemoteInputBatchCodec.decode(encoded.prefix(length))
+            }
+        }
+    }
+
     @Test("any truncation throws, never traps")
     func truncatedInputThrows() throws {
         let encoded = try RemoteInputBatchCodec.encode(RemoteInputBatch(

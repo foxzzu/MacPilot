@@ -129,6 +129,12 @@ final class RemoteInputCoordinator {
                 click(button: button, action: action)
             case let .press(button, action, pressure):
                 press(button: button, action: action, pressure: pressure)
+            case let .pressBegin(button, pressure):
+                beginPress(button: button, pressure: pressure)
+            case let .pressUpdate(pressure):
+                updatePressure(pressure)
+            case let .pressEnd(button):
+                endPress(button: button)
             case let .scroll(dx, dy):
                 handleScroll(dx: dx, dy: dy)
             }
@@ -148,6 +154,9 @@ final class RemoteInputCoordinator {
                 case let .move(dx, dy, buttons): return "move(dx:\(dx), dy:\(dy), buttons:\(buttons.rawValue))"
                 case let .click(button, action): return "click(\(button.rawValue), \(action.rawValue))"
                 case let .press(button, action, pressure): return "press(\(button.rawValue), \(action.rawValue), \(pressure))"
+                case let .pressBegin(button, pressure): return "pressBegin(\(button.rawValue), \(pressure))"
+                case .pressUpdate(let pressure): return "pressUpdate(\(pressure))"
+                case let .pressEnd(button): return "pressEnd(\(button.rawValue))"
                 case let .scroll(dx, dy): return "scroll(dx:\(dx), dy:\(dy))"
                 }
             }.joined(separator: "; ")
@@ -196,6 +205,29 @@ final class RemoteInputCoordinator {
             applyButton(button: button, action: action)
         } else {
             mouse.press(button: button, action: action, pressure: pressure)
+        }
+    }
+
+    /// The continuous press: identical button behavior on both paths, with
+    /// the pressure grade readable only through the CGEvent path.
+    private func beginPress(button: RemoteInputButton, pressure: Double) {
+        if virtualDevice.isAvailable {
+            applyButton(button: button, action: .down)
+        } else {
+            mouse.beginPress(button: button, pressure: pressure)
+        }
+    }
+
+    private func updatePressure(_ pressure: Double) {
+        guard !virtualDevice.isAvailable else { return }
+        mouse.updatePressure(pressure)
+    }
+
+    private func endPress(button: RemoteInputButton) {
+        if virtualDevice.isAvailable {
+            applyButton(button: button, action: .up)
+        } else {
+            mouse.endPress(button: button)
         }
     }
 

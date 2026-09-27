@@ -12,6 +12,10 @@ enum InputEvent: Equatable {
     /// A click graded by the pressure simulation. Only sent to Macs that
     /// advertise `.inputPressure`; everyone else gets plain clicks.
     case press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double)
+    /// The continuous press for Macs advertising `.inputPressureStream`.
+    case pressBegin(button: RemoteInputButton, pressure: Double)
+    case pressUpdate(pressure: Double)
+    case pressEnd(button: RemoteInputButton)
     case scroll(dx: Double, dy: Double)
 }
 
@@ -30,6 +34,12 @@ enum InputEncoder {
                     return .click(button: button, action: action)
                 case let .press(button, action, pressure):
                     return .press(button: button, action: action, pressure: pressure)
+                case let .pressBegin(button, pressure):
+                    return .pressBegin(button: button, pressure: pressure)
+                case let .pressUpdate(pressure):
+                    return .pressUpdate(pressure: pressure)
+                case let .pressEnd(button):
+                    return .pressEnd(button: button)
                 case let .scroll(dx, dy):
                     return .scroll(dx: dx, dy: dy)
                 }

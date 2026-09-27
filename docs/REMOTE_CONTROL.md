@@ -185,25 +185,37 @@ than improve the experience.
 
 ### Simulated pressure
 
-Optional, off by default (`PressureMode`: off/light/standard/strong). When
-enabled, the phone grades clicks from the contact patch: `UITouch.majorRadius`
-grows as the finger presses into the glass, and growth relative to the
-touch's own start — not an absolute radius, which varies by finger — is the
-press signal. A light landing carries the mode's floor pressure; a clearly
-widening contact climbs to full. A still touch held ≥ 0.4 s with enough
-growth actuates the button early (`mouseDown`), so press-and-hold turns into
-a drag without the double-tap; a resting finger keeps a flat radius and never
-presses.
+Optional, off by default (`PressureMode`: off/light/standard/strong). The
+phone runs a per-finger press recognizer over the touch samples: contact
+growth (relative to the touch's own baseline), hold duration, stillness and
+travel fold into a 0…1 score (`areaGrowth·0.45 + duration·0.25 +
+stability·0.2 − movement·0.1`). Travel past 12 px cancels the press outright
+— a moving finger is a cursor, never a press.
 
-On the wire this is event kind `4` (`u8 button | u8 action | u8 pressure`,
-0–255 → 0–1) inside the realtime batch, gated by the `.inputPressure`
-capability in the server hello and TXT record. Macs that advertise it apply
-the grade via `kCGMouseEventPressure` on the injected down event — only the
-CGEvent path carries the grade; the virtual HID report has no force field.
-Older Macs never see kind-4 events: the phone downgrades every press to a
-plain click for them, so the feature is invisible until both ends update.
-While the mode is `off` nothing scores radius anywhere and behavior is
-byte-for-byte the trackpad of previous releases.
+The click stays optimistic: a quick tap releases before any press decision
+and remains the plain click pair it always was, so ordinary tapping never
+waits. Only a touch whose score crosses the mode's bar while still on the
+glass actuates early — the button goes down exactly like a physical trackpad
+click, the pressure grades as the contact deepens, and the release lands when
+the finger lifts. A resting finger keeps a flat radius and never presses.
+
+On the wire the press is a continuous process, gated by capabilities so every
+version pairing degrades cleanly:
+
+- `.inputPressureStream` (kind 5 `pressBegin: button|pressure`, kind 6
+  `pressUpdate: pressure`, kind 7 `pressEnd: button`) — the button actuates
+  while the finger is down and the grade streams along;
+- `.inputPressure` (kind 4 `press: button|action|pressure`) — one-shot graded
+  press for Macs that predate the stream;
+- neither — plain clicks, and the feature is invisible.
+
+The Mac applies the grade via `kCGMouseEventPressure` on the injected down
+event and zero-delta drag updates; only the CGEvent path carries the grade
+(the virtual HID report has no force field, where the press degrades to its
+button bits). While the mode is `off` no recognizer exists anywhere and
+behavior is byte-for-byte the trackpad of previous releases. iPads have no
+Taptic engine, so press feedback plays a synthesized trackpad click instead
+of buzzing.
 
 ## Handshake
 

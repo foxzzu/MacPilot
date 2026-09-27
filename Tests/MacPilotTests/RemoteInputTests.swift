@@ -24,6 +24,9 @@ final class FakeMouseInjector: MouseInjecting {
     private(set) var moves: [(dx: Double, dy: Double, buttons: RemoteInputButtons)] = []
     private(set) var clicks: [Click] = []
     private(set) var presses: [Press] = []
+    private(set) var beganPresses: [(button: RemoteInputButton, pressure: Double)] = []
+    private(set) var pressureUpdates: [Double] = []
+    private(set) var endedPresses: [RemoteInputButton] = []
 
     init(canPostEvents: Bool = true) {
         self.canPostEvents = canPostEvents
@@ -39,6 +42,18 @@ final class FakeMouseInjector: MouseInjecting {
 
     func press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double) {
         presses.append(Press(button: button, action: action, pressure: pressure))
+    }
+
+    func beginPress(button: RemoteInputButton, pressure: Double) {
+        beganPresses.append((button, pressure))
+    }
+
+    func updatePressure(_ pressure: Double) {
+        pressureUpdates.append(pressure)
+    }
+
+    func endPress(button: RemoteInputButton) {
+        endedPresses.append(button)
     }
 }
 
@@ -154,6 +169,29 @@ struct RemoteInputCoordinatorTests {
             .init(button: .left, action: .down, pressure: 0.62),
             .init(button: .left, action: .up, pressure: 0.62),
         ])
+        #expect(mouse.clicks.isEmpty)
+    }
+
+    @Test("press stream actuates, grades and releases")
+    func pressStreamRoutes() {
+        let (coordinator, mouse, _) = makeCoordinator()
+        #expect(coordinator.beginSession(connectionID: connectionID) == .armed)
+        coordinator.handle(
+            RemoteInputBatch(
+                timestampMilliseconds: 1,
+                events: [
+                    .pressBegin(button: .left, pressure: 0.55),
+                    .pressUpdate(pressure: 0.9),
+                    .pressEnd(button: .left),
+                ]
+            ),
+            connectionID: connectionID
+        )
+        #expect(mouse.beganPresses.count == 1)
+        #expect(mouse.beganPresses[0].button == .left)
+        #expect(mouse.beganPresses[0].pressure == 0.55)
+        #expect(mouse.pressureUpdates == [0.9])
+        #expect(mouse.endedPresses == [.left])
         #expect(mouse.clicks.isEmpty)
     }
 

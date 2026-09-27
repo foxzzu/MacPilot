@@ -21,6 +21,12 @@ protocol MouseInjecting: AnyObject {
     /// stand-in for a real trackpad press. Pressure-aware apps — drawing
     /// surfaces above all — read it straight off the injected event.
     func press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double)
+
+    /// The continuous press: button down with a pressure grade, updates while
+    /// the contact deepens, release when the finger lifts.
+    func beginPress(button: RemoteInputButton, pressure: Double)
+    func updatePressure(_ pressure: Double)
+    func endPress(button: RemoteInputButton)
 }
 
 @MainActor
@@ -80,6 +86,30 @@ final class MouseInjector: MouseInjecting {
 
     func press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double) {
         postClick(button: button, action: action, pressure: pressure)
+    }
+
+    func beginPress(button: RemoteInputButton, pressure: Double) {
+        postClick(button: button, action: .down, pressure: pressure)
+    }
+
+    /// A zero-delta drag at the current position carrying the new pressure:
+    /// no motion reaches the apps, only the grade moves.
+    func updatePressure(_ pressure: Double) {
+        guard let source, let location = CGEvent(source: source)?.location else { return }
+        guard let event = CGEvent(
+            mouseEventSource: source,
+            mouseType: .leftMouseDragged,
+            mouseCursorPosition: location,
+            mouseButton: .left
+        ) else { return }
+        event.setIntegerValueField(.mouseEventDeltaX, value: 0)
+        event.setIntegerValueField(.mouseEventDeltaY, value: 0)
+        event.setDoubleValueField(.mouseEventPressure, value: max(min(pressure, 1), 0.1))
+        event.post(tap: .cghidEventTap)
+    }
+
+    func endPress(button: RemoteInputButton) {
+        postClick(button: button, action: .up, pressure: nil)
     }
 
     /// `pressure` rides only on down events: macOS reads the release of a

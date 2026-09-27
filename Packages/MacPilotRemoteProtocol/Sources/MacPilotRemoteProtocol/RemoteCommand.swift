@@ -55,4 +55,9 @@ public enum RemoteCapability: String, Codable, Sendable, CaseIterable, Equatable
     /// to the injected CGEvents. Senders without this advertisement fall back
     /// to plain clicks, which keeps old Macs working untouched.
     case inputPressure
+    /// The Mac understands the continuous press stream (pressBegin /
+    /// pressUpdate / pressEnd), so the phone can actuate the button while the
+    /// finger is still down and grade it as the contact deepens. Macs that
+    /// only advertise `.inputPressure` get the one-shot kind-4 press instead.
+    case inputPressureStream
 }

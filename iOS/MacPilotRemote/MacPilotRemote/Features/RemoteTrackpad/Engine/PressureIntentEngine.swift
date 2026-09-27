@@ -8,93 +8,77 @@ enum PressureMode: String, CaseIterable, Equatable {
     case light
     case standard
     case strong
+}
 
-    /// Radius growth (relative to the touch's starting contact) at which a
-    /// still, held finger counts as a deliberate press. The lighter the mode,
-    /// the smaller the growth it takes — and the more accidental presses.
-    var pressGrowthThreshold: CGFloat {
-        switch self {
-        case .off: return .infinity
-        case .light: return 0.30
-        case .standard: return 0.50
-        case .strong: return 0.80
+/// Per-mode tuning for the press recognizer.
+///
+/// `growthReference` normalizes contact growth into 0…1 before scoring, and
+/// `actuationScore` is the score at which the button goes down while the
+/// finger is still on the glass — the lower it is, the easier a press trips.
+struct PressureConfig {
+    /// Contact growth needed for a full area-growth score.
+    var growthReference: CGFloat
+    /// Score the recognizer must reach to actuate a press.
+    var actuationScore: Double
+    /// The pressure a lazy, growth-free tap still carries.
+    var pressureFloor: Double
+    /// A touch younger than this is always a candidate click, never a press —
+    /// the optimistic click's half of the latency contract.
+    var minimumPressDuration: TimeInterval
+
+    static func config(for mode: PressureMode) -> PressureConfig {
+        switch mode {
+        case .off:
+            return PressureConfig(growthReference: .infinity, actuationScore: .infinity, pressureFloor: 1, minimumPressDuration: .infinity)
+        case .light:
+            // Easy to trip: small growth, low score bar, soft floor.
+            return PressureConfig(growthReference: 0.22, actuationScore: 0.48, pressureFloor: 0.30, minimumPressDuration: 0.16)
+        case .standard:
+            return PressureConfig(growthReference: 0.38, actuationScore: 0.60, pressureFloor: 0.45, minimumPressDuration: 0.20)
+        case .strong:
+            // Deliberate presses only: big growth, high bar, firm floor.
+            return PressureConfig(growthReference: 0.60, actuationScore: 0.74, pressureFloor: 0.70, minimumPressDuration: 0.24)
         }
     }
+}
 
-    /// The pressure an ordinary (non-deep) tap carries: pressing harder
-    /// scales up to full pressure, resting taps stay above this floor.
-    var tapPressureFloor: Double {
-        switch self {
-        case .off: return 1
-        case .light: return 0.40
-        case .standard: return 0.55
-        case .strong: return 0.70
-        }
+/// Maps a recognizer score onto the pressure value the Mac injects: the
+/// deeper the recognized press, the closer to full pressure, never below the
+/// mode's floor (a lazy tap still reads as a real, if light, click).
+enum PressureCurve {
+    static func pressure(score: Double, config: PressureConfig) -> Double {
+        let shaped = pow(min(max(score, 0), 1), 1.15)
+        return min(config.pressureFloor + (1 - config.pressureFloor) * shaped, 1)
     }
 }
 
 /// Scores how much a touch reads as a deliberate Mac trackpad press.
 ///
-/// The signal is the contact patch: `UITouch.majorRadius` widens as the
-/// finger presses harder and stays flat when a finger merely rests. Growth
-/// relative to the touch's own start — not an absolute radius, which varies
-/// by finger size — is what separates "pressing" from "resting", and the
-/// hold duration filters out the fast glances that are just taps.
-///
-/// The engine is pure math with no state, so `GestureEngine` can consult it
-/// per finger without bookkeeping here, and when the mode is `off` nothing
-/// anywhere pays for it.
-struct PressureIntentEngine {
-    /// A still touch held at least this long with enough contact growth is a
-    /// press: the button goes down and stays down (drag included) until the
-    /// finger lifts.
-    static let pressHoldDuration: TimeInterval = 0.40
+/// The plan's weighting, over features `TouchHistory` reduces from the raw
+/// samples: contact growth dominates, duration matters, stillness helps,
+/// travel subtracts. Travel beyond `TouchHistory.movementCancel` cancels the
+/// press outright — a moving finger is a cursor, never a press.
+enum PressureIntentEngine {
+    static let weights = (areaGrowth: 0.45, duration: 0.25, stability: 0.2, movement: 0.1)
 
     /// Radius readings sit on a baseline that varies by finger; growth is
     /// measured against this floor so tiny contacts cannot score huge
     /// ratios off noise alone.
-    private static let radiusBaseline: CGFloat = 8
+    static let radiusBaseline: CGFloat = 6
 
-    /// 0…1 press depth for a tap that grew from `startRadius` to `endRadius`.
-    /// A light landing barely widens the contact and stays at the mode's
-    /// floor; pressing into the glass widens it and climbs toward full
-    /// pressure, which is exactly what the real trackpad's click feels like.
-    static func tapPressure(
-        startRadius: CGFloat,
-        endRadius: CGFloat,
-        mode: PressureMode
-    ) -> Double {
-        guard mode != .off else { return 1 }
-        let growth = growthRatio(startRadius: startRadius, endRadius: endRadius)
-        let pressure = mode.tapPressureFloor + Double(growth * pressureGain(mode))
-        return min(max(pressure, mode.tapPressureFloor), 1)
-    }
-
-    /// Whether a still touch held for `heldDuration` has widened enough to be
-    /// a press rather than a resting finger.
-    static func isPress(
-        startRadius: CGFloat,
-        currentRadius: CGFloat,
-        heldDuration: TimeInterval,
-        mode: PressureMode
-    ) -> Bool {
-        guard mode != .off, heldDuration >= pressHoldDuration else { return false }
-        let growth = growthRatio(startRadius: startRadius, endRadius: currentRadius)
-        return growth >= mode.pressGrowthThreshold
-    }
-
-    /// How fast growth converts into pressure: the lighter the mode, the
-    /// sooner a touch grades up toward full pressure.
-    private static func pressureGain(_ mode: PressureMode) -> CGFloat {
-        switch mode {
-        case .off: return 0
-        case .light: return 0.9
-        case .standard: return 0.9
-        case .strong: return 0.6
-        }
-    }
-
-    static func growthRatio(startRadius: CGFloat, endRadius: CGFloat) -> CGFloat {
-        max(endRadius - startRadius, 0) / max(startRadius, radiusBaseline)
+    static func score(history: TouchHistory, config: PressureConfig, now: TimeInterval) -> Double {
+        guard history.heldDuration(now: now) >= config.minimumPressDuration else { return 0 }
+        // Hard cancel: once the finger travels this far it is a cursor move,
+        // full stop.
+        guard history.movementDistance() < TouchHistory.movementCancel else { return 0 }
+        let areaGrowth = min(history.growthRatio(baseline: Self.radiusBaseline) / config.growthReference, 1)
+        let duration = min(history.heldDuration(now: now) / 0.30, 1)
+        let stability = history.stability()
+        let movement = min(history.movementDistance() / TouchHistory.movementCancel, 1)
+        let raw = areaGrowth * weights.areaGrowth
+            + duration * weights.duration
+            + stability * weights.stability
+            - movement * weights.movement
+        return min(max(raw, 0), 1)
     }
 }

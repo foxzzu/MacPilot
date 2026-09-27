@@ -39,6 +39,9 @@ struct TrackpadContainerView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Pressure: ON")
                                 Text("Radius: \(debug.radius, specifier: "%.1f")")
+                                Text("Δ Radius: \(debug.radiusDelta, specifier: "%.1f")")
+                                Text("Duration: \(debug.durationMs)ms")
+                                Text("Velocity: \(debug.velocity, specifier: "%.2f")")
                                 Text("Score: \(debug.score, specifier: "%.2f")")
                                 Text("State: \(debug.state)")
                             }
