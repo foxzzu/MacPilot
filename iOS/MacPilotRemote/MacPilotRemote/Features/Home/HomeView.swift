@@ -14,6 +14,8 @@ struct HomeView: View {
 
     @State private var trackpadModel: RemoteTrackpadModel?
     @State private var trackpadVisible = false
+    /// Text key of why the trackpad entry refused a tap, shown as an alert.
+    @State private var trackpadHintKey: String?
 
     var body: some View {
         NavigationStack {
@@ -52,6 +54,19 @@ struct HomeView: View {
         .onChange(of: appModel.connectionState) { _, _ in
             trackpadModel?.connectionStateChanged(appModel.connectionState)
         }
+        .alert(
+            appModel.text("trackpadEntry"),
+            isPresented: Binding(
+                get: { trackpadHintKey != nil },
+                set: { if !$0 { trackpadHintKey = nil } }
+            ),
+            actions: {
+                Button(appModel.text("trackpadDone")) { trackpadHintKey = nil }
+            },
+            message: {
+                Text(trackpadHintKey.map { appModel.text($0) } ?? "")
+            }
+        )
     }
 
     // MARK: - Trackpad
@@ -147,15 +162,15 @@ struct HomeView: View {
     }
 
     /// The trackpad entry. Only a live session whose Mac advertised the
-    /// realtime channel may open it — sending `beginRealtimeInput` to a Mac
-    /// that predates the channel makes that Mac drop the connection, which is
-    /// strictly worse than a disabled row.
+    /// realtime channel may open it; any other tap explains itself with an
+    /// alert — a Mac that predates the channel would drop the connection if
+    /// `beginRealtimeInput` reached it, so it is told to update instead.
     private var trackpadRow: some View {
-        Button(action: openTrackpad) {
+        Button(action: handleTrackpadTap) {
             VStack(spacing: 4) {
                 Image(systemName: "computermouse")
                     .font(.body)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(trackpadReady ? Color.accentColor : Color.secondary)
                 Text(appModel.text("trackpadEntry"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -164,9 +179,16 @@ struct HomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!trackpadReady)
         .accessibilityLabel(appModel.text("trackpadEntry"))
         .accessibilityHint(trackpadSubtitle)
+    }
+
+    private func handleTrackpadTap() {
+        guard trackpadReady else {
+            trackpadHintKey = trackpadSubtitle
+            return
+        }
+        openTrackpad()
     }
 
     private var trackpadReady: Bool {
