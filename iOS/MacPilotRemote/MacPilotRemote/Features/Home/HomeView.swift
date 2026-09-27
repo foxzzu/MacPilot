@@ -211,9 +211,9 @@ struct HomeView: View {
     /// thing with a second way to get it wrong.
     private var actionGrid: some View {
         LazyVGrid(columns: columns, spacing: 14) {
-            actionButton(.lockScreen, titleKey: "actionLock", systemImage: "lock.fill", tint: .blue)
             actionButton(.displayOff, titleKey: "actionDisplayOff", systemImage: "moon.fill", tint: .indigo)
             actionButton(.wakeDisplay, titleKey: "actionWakeDisplay", systemImage: "sun.max.fill", tint: .yellow)
+            actionButton(.lockScreen, titleKey: "actionLock", systemImage: "lock.fill", tint: .blue)
             actionButton(.wakeAndUnlock, titleKey: "actionWakeAndUnlock", systemImage: "sunrise.fill", tint: .orange)
         }
     }
