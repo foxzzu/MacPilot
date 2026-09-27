@@ -1,8 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// How hard the simulated press grades: `off` keeps the plain click pipeline,
-/// the other modes trade mis-tap safety for reachability of the deep press.
+/// How hard the simulated press grades: `off` keeps the plain click pipeline
+/// and never starts a recognizer; the other modes trade mis-tap safety for
+/// reachability of the deep press.
 enum PressureMode: String, CaseIterable, Equatable {
     case off
     case light
@@ -10,75 +11,73 @@ enum PressureMode: String, CaseIterable, Equatable {
     case strong
 }
 
-/// Per-mode tuning for the press recognizer.
+/// Per-mode recognizer tuning.
 ///
-/// `growthReference` normalizes contact growth into 0…1 before scoring, and
-/// `actuationScore` is the score at which the button goes down while the
-/// finger is still on the glass — the lower it is, the easier a press trips.
+/// `actuationScore` is the spec's threshold — the weighted score a touch must
+/// reach (while still, inside the decision window rules) before the button
+/// goes down. `expectedGrowth` and `accumulatedReference` normalize the two
+/// growth features into 0…1; the lighter the mode, the smaller the growth
+/// they demand.
 struct PressureConfig {
-    /// Contact growth needed for a full area-growth score.
-    var growthReference: CGFloat
-    /// Score the recognizer must reach to actuate a press.
+    var expectedGrowth: CGFloat
+    var accumulatedReference: CGFloat
     var actuationScore: Double
-    /// The pressure a lazy, growth-free tap still carries.
-    var pressureFloor: Double
-    /// A touch younger than this is always a candidate click, never a press —
-    /// the optimistic click's half of the latency contract.
-    var minimumPressDuration: TimeInterval
 
     static func config(for mode: PressureMode) -> PressureConfig {
         switch mode {
         case .off:
-            return PressureConfig(growthReference: .infinity, actuationScore: .infinity, pressureFloor: 1, minimumPressDuration: .infinity)
+            return PressureConfig(expectedGrowth: .infinity, accumulatedReference: .infinity, actuationScore: .infinity)
         case .light:
-            // Easy to trip: small growth, low score bar, soft floor.
-            return PressureConfig(growthReference: 0.22, actuationScore: 0.48, pressureFloor: 0.30, minimumPressDuration: 0.16)
+            // 轻手：门槛 0.35，微小累积增长即可触发。
+            return PressureConfig(expectedGrowth: 0.16, accumulatedReference: 1.6, actuationScore: 0.35)
         case .standard:
-            return PressureConfig(growthReference: 0.38, actuationScore: 0.60, pressureFloor: 0.45, minimumPressDuration: 0.20)
+            // 默认：门槛 0.5。
+            return PressureConfig(expectedGrowth: 0.25, accumulatedReference: 2.4, actuationScore: 0.50)
         case .strong:
-            // Deliberate presses only: big growth, high bar, firm floor.
-            return PressureConfig(growthReference: 0.60, actuationScore: 0.74, pressureFloor: 0.70, minimumPressDuration: 0.24)
+            // 类 Force Click：门槛 0.7，需要明显按压。
+            return PressureConfig(expectedGrowth: 0.40, accumulatedReference: 3.6, actuationScore: 0.70)
         }
-    }
-}
-
-/// Maps a recognizer score onto the pressure value the Mac injects: the
-/// deeper the recognized press, the closer to full pressure, never below the
-/// mode's floor (a lazy tap still reads as a real, if light, click).
-enum PressureCurve {
-    static func pressure(score: Double, config: PressureConfig) -> Double {
-        let shaped = pow(min(max(score, 0), 1), 1.15)
-        return min(config.pressureFloor + (1 - config.pressureFloor) * shaped, 1)
     }
 }
 
 /// Scores how much a touch reads as a deliberate Mac trackpad press.
 ///
-/// The plan's weighting, over features `TouchHistory` reduces from the raw
-/// samples: contact growth dominates, duration matters, stillness helps,
-/// travel subtracts. Travel beyond `TouchHistory.movementCancel` cancels the
-/// press outright — a moving finger is a cursor, never a press.
+/// Nothing here looks at an absolute radius — every touch is its own
+/// adaptive baseline, so an index finger, a thumb and a pinky all score the
+/// same way. The features come from `TouchHistory`, the weights are the
+/// spec's, and the result feeds `PressureCurve`.
 enum PressureIntentEngine {
-    static let weights = (areaGrowth: 0.45, duration: 0.25, stability: 0.2, movement: 0.1)
+    static let weights = (growth: 0.35, accumulated: 0.25, duration: 0.20, movement: 0.20)
 
-    /// Radius readings sit on a baseline that varies by finger; growth is
-    /// measured against this floor so tiny contacts cannot score huge
-    /// ratios off noise alone.
-    static let radiusBaseline: CGFloat = 6
+    /// A touch younger than this never presses: the optimistic click owns it.
+    static let decisionWindow: TimeInterval = 0.15
 
-    static func score(history: TouchHistory, config: PressureConfig, now: TimeInterval) -> Double {
-        guard history.heldDuration(now: now) >= config.minimumPressDuration else { return 0 }
-        // Hard cancel: once the finger travels this far it is a cursor move,
-        // full stop.
-        guard history.movementDistance() < TouchHistory.movementCancel else { return 0 }
-        let areaGrowth = min(history.growthRatio(baseline: Self.radiusBaseline) / config.growthReference, 1)
-        let duration = min(history.heldDuration(now: now) / 0.30, 1)
-        let stability = history.stability()
-        let movement = min(history.movementDistance() / TouchHistory.movementCancel, 1)
-        let raw = areaGrowth * weights.areaGrowth
+    /// Speed beyond this (points/second) saturates the movement penalty.
+    static let velocitySaturation: CGFloat = 150
+
+    static func score(history: TouchHistory, config: PressureConfig) -> PressureScore {
+        // Relative change only — never "radius > N".
+        let growth = min(max(history.relativeGrowth / config.expectedGrowth, 0), 1)
+        let accumulated = min(max(history.accumulatedGrowth / config.accumulatedReference, 0), 1)
+        // <100 ms = 0; 100–300 ms linear; >300 ms = 1.
+        let seconds = history.duration
+        let duration = min(max((seconds - 0.1) / 0.2, 0), 1)
+        // Long still holds are *not* presses by themselves: hard-cancel once
+        // the finger has travelled beyond the press distance.
+        let movementPenalty = history.movementDistance >= TouchHistory.movementCancel
+            ? 1
+            : min(history.velocity / velocitySaturation, 1)
+
+        let raw = growth * weights.growth
+            + accumulated * weights.accumulated
             + duration * weights.duration
-            + stability * weights.stability
-            - movement * weights.movement
-        return min(max(raw, 0), 1)
+            - movementPenalty * weights.movement
+        return PressureScore(
+            growth: growth,
+            accumulated: accumulated,
+            duration: duration,
+            movementPenalty: movementPenalty,
+            value: min(max(raw, 0), 1)
+        )
     }
 }

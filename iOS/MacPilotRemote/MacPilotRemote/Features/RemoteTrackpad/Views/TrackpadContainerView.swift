@@ -37,11 +37,12 @@ struct TrackpadContainerView: View {
                     .overlay(alignment: .topTrailing) {
                         if let debug = model.pressureDebug {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Pressure: ON")
                                 Text("Radius: \(debug.radius, specifier: "%.1f")")
-                                Text("Δ Radius: \(debug.radiusDelta, specifier: "%.1f")")
+                                Text("Start: \(debug.startRadius, specifier: "%.1f")")
+                                Text("Growth: \(debug.growth, specifier: "%.1f")")
+                                Text("Accum: \(debug.accumulatedGrowth, specifier: "%.1f")")
                                 Text("Duration: \(debug.durationMs)ms")
-                                Text("Velocity: \(debug.velocity, specifier: "%.2f")")
+                                Text("Velocity: \(debug.velocity, specifier: "%.1f")")
                                 Text("Score: \(debug.score, specifier: "%.2f")")
                                 Text("State: \(debug.state)")
                             }

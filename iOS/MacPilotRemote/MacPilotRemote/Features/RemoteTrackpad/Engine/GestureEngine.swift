@@ -217,13 +217,13 @@ struct GestureEngine {
                 lastTapEndedAt = nil
                 // A recognized press releases through the press stream; a
                 // double-tap drag releases through the plain click.
-                if finger.press?.isActive == true {
-                    _ = finger.press?.end(now: time)
+                let result = finger.press?.end(now: time)
+                if result?.released == true {
                     return [.pressEnded(button: .left)]
                 }
                 return [.click(button: .left, action: .up, pressure: 1)]
             }
-            if let sample = samples.first, finger.press?.isActive == false {
+            if let sample = samples.first, finger.press != nil {
                 _ = finger.press?.update(sample)
             }
             let quiet = !finger.moved && duration <= Self.tapMaximumDuration
@@ -240,8 +240,7 @@ struct GestureEngine {
             // simulation the recognizer's final score grades the pair.
             var pressure = 1.0
             if finger.press != nil {
-                finger.press?.end(now: time)
-                pressure = finger.press?.lastPressure ?? 1
+                pressure = finger.press?.end(now: time).pressure ?? 1
             }
             var outputs: [GestureOutput] = [
                 .click(button: .left, action: .down, pressure: pressure),
@@ -279,8 +278,8 @@ struct GestureEngine {
             if finger.dragging, remaining == 0 {
                 mode = .idle
                 lastTapEndedAt = nil
-                if finger.press?.isActive == true {
-                    _ = finger.press?.end(now: ProcessInfo.processInfo.systemUptime)
+                let result = finger.press?.end(now: ProcessInfo.processInfo.systemUptime)
+                if result?.released == true {
                     return [.pressEnded(button: .left)]
                 }
                 return [.click(button: .left, action: .up, pressure: 1)]
@@ -333,7 +332,7 @@ struct GestureEngine {
 
     /// Pressure simulation telemetry for the debug overlay: nil while no
     /// finger is down or the simulation is off.
-    func pressureDebugSnapshot(time: TimeInterval) -> (radius: CGFloat, radiusDelta: CGFloat, durationMs: Int, velocity: Double, score: Double, state: String)? {
+    func pressureDebugSnapshot(time: TimeInterval) -> PressureDebugInfo? {
         guard case .oneFinger(let finger) = mode, let press = finger.press else { return nil }
         return press.snapshot(now: time)
     }

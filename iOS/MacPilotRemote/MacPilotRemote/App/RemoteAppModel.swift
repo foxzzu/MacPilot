@@ -1,3 +1,4 @@
+import CoreHaptics
 import Combine
 import CoreBluetooth
 import Foundation
@@ -1100,6 +1101,10 @@ final class RemoteAppModel: ObservableObject {
 /// Small wrapper so the haptics stay out of the views and off the Mac target.
 @MainActor
 enum Haptics {
+    /// CoreHaptics engine for the graded press feedback, created lazily and
+    /// restarted after the system stops it.
+    private static var hapticEngine: CHHapticEngine?
+
     static func impact() {
         #if canImport(UIKit)
         // iPads carry no Taptic engine; the synthesized trackpad tap stands
@@ -1111,6 +1116,52 @@ enum Haptics {
         }
         #endif
     }
+
+    /// The simulated press actuated: a light transient for an ordinary press,
+    /// a heavy one once it grades near full pressure. iPads answer with the
+    /// click sound, pitched up for the deep press.
+    static func press(deep: Bool) {
+        #if canImport(UIKit)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            TrackpadClickSound.play(deep: deep)
+            return
+        }
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+            UIImpactFeedbackGenerator(style: deep ? .heavy : .light).impactOccurred()
+            return
+        }
+        do {
+            let engine = try ensureHapticEngine()
+            let events: [CHHapticEvent] = [
+                CHHapticEvent(
+                    eventType: .hapticTransient,
+                    parameters: [
+                        CHHapticEventParameter(parameterID: .hapticIntensity, value: deep ? 1.0 : 0.5),
+                        CHHapticEventParameter(parameterID: .hapticSharpness, value: deep ? 0.9 : 0.5),
+                    ],
+                    relativeTime: 0
+                ),
+            ]
+            let pattern = try CHHapticPattern(events: events, parameters: [])
+            try engine.start()
+            try engine.makePlayer(with: pattern).start(atTime: CHHapticTimeImmediate)
+        } catch {
+            UIImpactFeedbackGenerator(style: deep ? .heavy : .light).impactOccurred()
+        }
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private static func ensureHapticEngine() throws -> CHHapticEngine {
+        if let hapticEngine { return hapticEngine }
+        let engine = try CHHapticEngine()
+        engine.resetHandler = { [weak engine] in try? engine?.start() }
+        engine.isAutoShutdownEnabled = true
+        try engine.start()
+        hapticEngine = engine
+        return engine
+    }
+    #endif
 
     static func success() {
         #if canImport(UIKit)

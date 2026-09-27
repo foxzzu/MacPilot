@@ -35,12 +35,17 @@
 		9C4A299E2EC608FE844CBF24 /* RemoteKeyboardInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BADBB71C31CBC31DE93557E /* RemoteKeyboardInputView.swift */; };
 		ABAB1A3DD21B1D9F93831A4A /* MacPilotRemoteProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 2DA6CC718265164CF50E009F /* MacPilotRemoteProtocol */; };
 		AE22ED3FC0D9F79938EAFDB0 /* TouchHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F191E81E8CA9B2CCD4CF79A9 /* TouchHistory.swift */; };
+		B2072638812E9D738D98CA6F /* PressureSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E2DE683D33CF6736C45DE3 /* PressureSample.swift */; };
+		BA215FCD67694460D269A62D /* PressureCurve.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4083ECB0625AD91715E766A6 /* PressureCurve.swift */; };
 		BBA8EB473A8DFC5AFF6FC54E /* MacPilotRemoteTransport in Frameworks */ = {isa = PBXBuildFile; productRef = EC71CA884A51DA6FA3C258DF /* MacPilotRemoteTransport */; };
 		C0F29AE38E0B010578AAD67D /* RemoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A556F1AAEC7A9B11C37B641 /* RemoteModels.swift */; };
 		CC59413625ABC1AAEE0F80AA /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21C2AB621EFBC8E6529C0E5 /* RootView.swift */; };
 		CDA789979157BEA48DED3C32 /* InertiaProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99645C5EFB4EBEF5B3AD89F0 /* InertiaProcessor.swift */; };
+		CFE24B17BB81DD4A70AC5610 /* PressState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0365A5FA06DEC796E7A3AFAD /* PressState.swift */; };
 		D9570EAFD947E6C943C5609E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C3C7D3A57D31F56E250816 /* HomeView.swift */; };
 		DD490523AAB98454CCDDA523 /* PressGestureRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36953057505FD14ED272AED /* PressGestureRecognizer.swift */; };
+		E30CA50EFB637567B33E9A39 /* PressureScore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11AAB2029319459E3E108E1 /* PressureScore.swift */; };
+		EDB6E4806D78609E8A2942F7 /* PressureDebugInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD3A5D4789D587B13BE376E /* PressureDebugInfo.swift */; };
 		EFC379A087AD05F1A8951B4D /* TrackpadOrientationCompass.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1BF7246E89AE5367E76D9EF /* TrackpadOrientationCompass.swift */; };
 		F15537871D1809E163DF01BC /* GestureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D1267A79F7F5D73F8C52E77 /* GestureEngine.swift */; };
 /* End PBXBuildFile section */
@@ -56,11 +61,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0365A5FA06DEC796E7A3AFAD /* PressState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressState.swift; sourceTree = "<group>"; };
 		07C1EB6A722858B0212F438D /* MacPilotRemote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MacPilotRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		09C3C7D3A57D31F56E250816 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		1CEAD84B28A1735C296AEBF8 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
 		2664C90B50B85054CF47D9B3 /* RemoteAppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAppModel.swift; sourceTree = "<group>"; };
 		3A556F1AAEC7A9B11C37B641 /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
+		4083ECB0625AD91715E766A6 /* PressureCurve.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressureCurve.swift; sourceTree = "<group>"; };
 		42D31EAE82FAE4CB3CCAD7C9 /* RemoteTrackpadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTrackpadModel.swift; sourceTree = "<group>"; };
 		444FF6D1A1FFC5A9B039FE51 /* PairingSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSheetView.swift; sourceTree = "<group>"; };
 		447CDE5B9C0AAC4C65F9D517 /* ScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTests.swift; sourceTree = "<group>"; };
@@ -81,10 +88,12 @@
 		96FDC5169DB8CA6CDC1009EF /* RemoteDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiscoveryService.swift; sourceTree = "<group>"; };
 		99645C5EFB4EBEF5B3AD89F0 /* InertiaProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InertiaProcessor.swift; sourceTree = "<group>"; };
 		996A9B575EF823EFF98F1EB8 /* TrackpadState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadState.swift; sourceTree = "<group>"; };
+		9AD3A5D4789D587B13BE376E /* PressureDebugInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressureDebugInfo.swift; sourceTree = "<group>"; };
 		A11CCEAC5B50B59CC42724C3 /* VelocityCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VelocityCalculator.swift; sourceTree = "<group>"; };
 		A631B526163D86A62B57FE38 /* MacPilotRemoteProtocol */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MacPilotRemoteProtocol; path = ../../Packages/MacPilotRemoteProtocol; sourceTree = SOURCE_ROOT; };
 		B8E51007DA7A300933D953C5 /* PressureIntentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressureIntentEngine.swift; sourceTree = "<group>"; };
 		BE5AAC04F84819EBB0BDBC6B /* AccelerationCurve.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccelerationCurve.swift; sourceTree = "<group>"; };
+		C11AAB2029319459E3E108E1 /* PressureScore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressureScore.swift; sourceTree = "<group>"; };
 		C1BF7246E89AE5367E76D9EF /* TrackpadOrientationCompass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadOrientationCompass.swift; sourceTree = "<group>"; };
 		C5B2D649254FA8EE4ED7FA7E /* InputEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputEvent.swift; sourceTree = "<group>"; };
 		CE506F7AEC00BC4D65847C12 /* RemoteSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSettingsView.swift; sourceTree = "<group>"; };
@@ -93,6 +102,7 @@
 		E21C2AB621EFBC8E6529C0E5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		E36953057505FD14ED272AED /* PressGestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressGestureRecognizer.swift; sourceTree = "<group>"; };
 		F191E81E8CA9B2CCD4CF79A9 /* TouchHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchHistory.swift; sourceTree = "<group>"; };
+		F4E2DE683D33CF6736C45DE3 /* PressureSample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressureSample.swift; sourceTree = "<group>"; };
 		FCFB309710B660CAEDF2CF72 /* TrackpadSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -169,7 +179,12 @@
 				4D1267A79F7F5D73F8C52E77 /* GestureEngine.swift */,
 				99645C5EFB4EBEF5B3AD89F0 /* InertiaProcessor.swift */,
 				E36953057505FD14ED272AED /* PressGestureRecognizer.swift */,
+				0365A5FA06DEC796E7A3AFAD /* PressState.swift */,
+				4083ECB0625AD91715E766A6 /* PressureCurve.swift */,
+				9AD3A5D4789D587B13BE376E /* PressureDebugInfo.swift */,
 				B8E51007DA7A300933D953C5 /* PressureIntentEngine.swift */,
+				F4E2DE683D33CF6736C45DE3 /* PressureSample.swift */,
+				C11AAB2029319459E3E108E1 /* PressureScore.swift */,
 				F191E81E8CA9B2CCD4CF79A9 /* TouchHistory.swift */,
 				D152E96DBE715090384BAA76 /* TouchProcessor.swift */,
 				A11CCEAC5B50B59CC42724C3 /* VelocityCalculator.swift */,
@@ -425,7 +440,12 @@
 				36BB935C02EC8519CE7DAFB1 /* PairedMacStore.swift in Sources */,
 				1FDC655EF74A5B0A9E892D40 /* PairingSheetView.swift in Sources */,
 				DD490523AAB98454CCDDA523 /* PressGestureRecognizer.swift in Sources */,
+				CFE24B17BB81DD4A70AC5610 /* PressState.swift in Sources */,
+				BA215FCD67694460D269A62D /* PressureCurve.swift in Sources */,
+				EDB6E4806D78609E8A2942F7 /* PressureDebugInfo.swift in Sources */,
 				077A2BDE51FBE26CE12D7627 /* PressureIntentEngine.swift in Sources */,
+				B2072638812E9D738D98CA6F /* PressureSample.swift in Sources */,
+				E30CA50EFB637567B33E9A39 /* PressureScore.swift in Sources */,
 				2A4D3DB2192AC62F75C6B89D /* RemoteAppModel.swift in Sources */,
 				7F9A392EE7B644AB9A987F7A /* RemoteBLEPeripheral.swift in Sources */,
 				8ABE53FBAA8C5E88D864E561 /* RemoteConnectionManager.swift in Sources */,
@@ -532,7 +552,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -553,7 +573,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

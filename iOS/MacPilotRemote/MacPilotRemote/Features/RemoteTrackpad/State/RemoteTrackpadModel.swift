@@ -41,7 +41,7 @@ final class RemoteTrackpadModel: ObservableObject {
     }
     /// Live pressure telemetry for the debug overlay, refreshed a few times a
     /// second only while the overlay is enabled.
-    @Published var pressureDebug: (radius: CGFloat, radiusDelta: CGFloat, durationMs: Int, velocity: Double, score: Double, state: String)?
+    @Published var pressureDebug: PressureDebugInfo?
     /// How far down the connected Mac's pressure support goes.
     private enum PressureTier {
         case stream   // pressBegin / pressUpdate / pressEnd
@@ -431,7 +431,11 @@ final class RemoteTrackpadModel: ObservableObject {
                 case .plain:
                     append(.click(button: button, action: .down))
                 }
-                hapticAfterSend = settings.pressureFeedback
+                // CoreHaptics on the press moment: light for an ordinary
+                // press, heavy once it grades near full.
+                if settings.pressureFeedback {
+                    Haptics.press(deep: pressure >= 0.8)
+                }
 
             case let .pressGraded(pressure):
                 if pressureTier == .stream {

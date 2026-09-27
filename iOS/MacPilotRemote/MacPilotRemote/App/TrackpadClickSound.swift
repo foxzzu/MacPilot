@@ -12,23 +12,27 @@ import UIKit
 enum TrackpadClickSound {
     private static var player: AVAudioPlayer?
 
-    static func play() {
+    static func play(deep: Bool = false) {
         if player == nil {
-            player = makePlayer()
+            player = makePlayer(deep: deep)
         }
         guard let player else { return }
+        player.volume = deep ? 0.55 : 0.4
+        player.rate = deep ? 1.0 : 1.15
         player.currentTime = 0
+        player.enableRate = true
         player.play()
     }
 
-    private static func makePlayer() -> AVAudioPlayer? {
+    private static func makePlayer(deep: Bool) -> AVAudioPlayer? {
         // Ambient mixes with whatever is playing and respects the mute
         // switch: click feedback must never interrupt the user's audio.
         try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
         guard let data = clickWavData() else { return nil }
         let player = try? AVAudioPlayer(data: data, fileTypeHint: AVFileType.wav.rawValue)
-        player?.volume = 0.4
+        player?.enableRate = true
+        player?.volume = deep ? 0.55 : 0.4
         player?.prepareToPlay()
         return player
     }
