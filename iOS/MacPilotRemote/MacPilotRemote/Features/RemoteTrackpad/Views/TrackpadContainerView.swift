@@ -24,10 +24,11 @@ struct TrackpadContainerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay {
                         TrackpadOrientationCompass(
-                            // While the page is sideways the lit arrow is the
-                            // window's top edge — the edge that is physically
-                            // up in the user's hold.
-                            orientation: model.orientation.isLandscape ? .top : model.orientation,
+                            // While the scene is sideways for the keyboard the
+                            // lit arrow is the window's top edge — the edge
+                            // that is physically up in the user's hold.
+                            orientation: model.keyboardActive && model.orientation.isLandscape
+                                ? .top : model.orientation,
                             onSelect: { model.setOrientation($0) },
                             text: { appModel.text($0) }
                         )

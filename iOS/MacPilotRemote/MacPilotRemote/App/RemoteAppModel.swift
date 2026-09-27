@@ -846,6 +846,11 @@ final class RemoteAppModel: ObservableObject {
         // waiting out the current one's window.
         cancelCandidates()
         connection.disconnect(report: false)
+        // The silent disconnect above leaves the visible state at `.connected`,
+        // and the supervisor returns immediately when it sees that — the fresh
+        // race would never dial and the link would stay dead. Step the state
+        // down first.
+        connectionState = hasEverConnected ? .reconnecting : .connecting
         stopConnectSupervisor()
         startConnectSupervisor()
     }

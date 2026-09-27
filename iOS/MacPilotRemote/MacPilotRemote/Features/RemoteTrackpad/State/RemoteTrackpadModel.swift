@@ -36,7 +36,13 @@ final class RemoteTrackpadModel: ObservableObject {
             acceleration.trackingSpeed = settings.trackingSpeed
         }
     }
-    @Published private(set) var keyboardActive = false
+    @Published private(set) var keyboardActive = false {
+        didSet { syncInterfaceRotation() }
+    }
+    /// True while the scene is rotated to a sideways hold for the keyboard:
+    /// view coordinates then already match the user's frame, so the local
+    /// delta rotation switches off until the keyboard closes.
+    private var interfaceMatchesHold = false
 
     private weak var appModel: RemoteAppModel?
     private var store = TrackpadSettingsStore()
@@ -107,9 +113,6 @@ final class RemoteTrackpadModel: ObservableObject {
     func open(appModel: RemoteAppModel) {
         guard phase == .idle else { return }
         self.appModel = appModel
-        // A sideways hold stored from the last session turns the page right
-        // away, before the flip-in animation runs.
-        syncInterfaceRotation()
         // Defense in depth for a Mac that does not advertise the realtime
         // channel: sending `beginRealtimeInput` anyway would make an older
         // Mac fail to decode the command and drop the whole session. Say so
@@ -198,7 +201,11 @@ final class RemoteTrackpadModel: ObservableObject {
     func connectionStateChanged(_ state: RemoteConnectionState) {
         switch state {
         case .connected:
-            guard phase == .reconnecting, beginTask == nil else { return }
+            // Every (re)established link needs its own begin: closing a
+            // connection disarms the Mac's realtime session, so a retry that
+            // quietly swapped the transport must re-arm before batches flow.
+            guard phase.isActiveLike, beginTask == nil else { return }
+            if phase == .active { resetMotionBuffers() }
             beginTask = Task { await beginSession() }
         case .reconnecting:
             guard phase.isActiveLike else { return }
@@ -238,14 +245,18 @@ final class RemoteTrackpadModel: ObservableObject {
         scrollTravel = .zero
     }
 
-    /// Turns the page with the chosen hold: a sideways arrow rotates the
-    /// scene so the surface matches the way the phone is held — which is also
-    /// what makes the keyboard rise from the long edge. The page never
-    /// rotates on its own; only an explicit arrow tap turns it.
+    /// The scene only ever turns for the keyboard: with the keyboard up in a
+    /// sideways hold it rotates to that hold so the keys rise from the long
+    /// edge. Tapping an orientation arrow never rotates anything — it only
+    /// changes the finger→cursor mapping.
     private func syncInterfaceRotation() {
-        resetMotionBuffers()
+        let landscape = keyboardActive && orientation.isLandscape
+        if landscape != interfaceMatchesHold {
+            interfaceMatchesHold = landscape
+            resetMotionBuffers()
+        }
         InterfaceOrientationController.shared.setSupported(
-            orientation.isLandscape ? InterfaceOrientationController.mask(for: orientation) : .portrait
+            landscape ? InterfaceOrientationController.mask(for: orientation) : .portrait
         )
     }
 
@@ -467,25 +478,17 @@ final class RemoteTrackpadModel: ObservableObject {
 
     // MARK: - Motion helpers
 
-    /// Finger deltas feed the cursor in view coordinates, which always match
-    /// what the user sees: the page itself turns when a sideways hold is
-    /// chosen, so no rotation is applied. The one exception is the bottom
-    /// hold — iOS cannot display portrait upside down on a phone, so that one
-    /// rotates deltas in place while the page stays upright.
+    /// Rotates finger deltas for the orientation the user is holding. While
+    /// the scene is rotated to a sideways hold for the keyboard, view
+    /// coordinates already match the user's frame and no rotation applies.
     private func mapped(dx: Double, dy: Double) -> (Double, Double) {
-        if orientation == .bottom && !sceneIsLandscape { return (-dx, -dy) }
-        return (dx, dy)
-    }
-
-    /// Whether the scene currently shows the page sideways. View coordinates
-    /// always line up with the visible page, so a sideways scene also lines
-    /// up with the user's hold.
-    private var sceneIsLandscape: Bool {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
-            return false
+        if interfaceMatchesHold { return (dx, dy) }
+        switch orientation {
+        case .top: return (dx, dy)
+        case .left: return (dy, -dx)
+        case .bottom: return (-dx, -dy)
+        case .right: return (-dy, dx)
         }
-        return scene.interfaceOrientation.isLandscape
     }
 
     private func quantized(_ value: Double, into remainder: inout CGFloat) -> Double {
