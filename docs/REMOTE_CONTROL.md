@@ -129,16 +129,17 @@ constructor). The iPhone side lives under
 
 ### Phone keyboard for Mac text fields
 
-The first trackpad tap remains a normal click, so it focuses the control beneath
-the pointer. On the second quick tap, a Mac that advertised
-`remoteTextInputAvailable` receives `beginTextInput` over the authenticated
-`0x02` command channel. The Mac hit-tests the current pointer position with
-Accessibility, walks up to an enabled editable text field, text area, or editable
-combo box, focuses it, and retains that element for this connection. Only an
-accepted request opens the native iPhone keyboard. If the Mac rejects the
-request (including when the pointer is over ordinary content), the phone sends
-the second click instead, preserving normal double-click behavior. An older Mac
-never receives this new command and continues to use double tap as double click.
+Every trackpad tap stays a normal click, so it focuses the control beneath the
+pointer — the same deal as clicking a field with a real mouse. Right after the
+click, a Mac that advertised `remoteTextInputAvailable` receives
+`beginTextInput` over the authenticated `0x02` command channel (the phone
+waits a beat first so the click's focus has landed). The Mac hit-tests the
+current pointer position with Accessibility, walks up to an enabled editable
+text field, text area, or editable combo box, focuses it, and retains that
+element for this connection. Only an accepted request opens the native iPhone
+keyboard; a rejected request is a tap that landed off text, and the click has
+already gone out, so nothing is replayed. An older Mac never receives this new
+command and every tap just stays a click.
 
 Committed iPhone text is sent as `textInput` operations (`insert`,
 `deleteBackward`, `returnKey`) on the encrypted command channel. IME marked

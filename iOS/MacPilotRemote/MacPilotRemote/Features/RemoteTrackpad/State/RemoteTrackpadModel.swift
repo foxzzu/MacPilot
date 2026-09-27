@@ -359,11 +359,16 @@ final class RemoteTrackpadModel: ObservableObject {
         }
     }
 
+    /// Wait this long after the tap's click before probing, so the field the
+    /// click focused has actually become first responder on the Mac.
+    private static let keyboardProbeDelay = Duration.milliseconds(120)
+
     private func requestKeyboard() {
         guard !keyboardActive, keyboardRequestTask == nil, let appModel else { return }
         keyboardRequestTask = Task { [weak self] in
-            // A quick dismissal followed by another double tap must finish
-            // the previous end command before starting the new session.
+            try? await Task.sleep(for: Self.keyboardProbeDelay)
+            // A quick dismissal followed by another tap must finish the
+            // previous end command before starting the new session.
             await self?.textInputTask?.value
             guard !Task.isCancelled else { return }
             let accepted = await appModel.beginTextInput()
@@ -373,12 +378,9 @@ final class RemoteTrackpadModel: ObservableObject {
             if accepted {
                 self.textInputEpoch += 1
                 self.keyboardActive = true
-            } else {
-                // Preserve the second click when the pointer is not on text.
-                self.append(.click(button: .left, action: .down))
-                self.append(.click(button: .left, action: .up))
-                self.flushIfNeeded()
             }
+            // A rejected probe is a tap that landed off text: the click has
+            // already gone out, there is nothing to replay.
         }
     }
 

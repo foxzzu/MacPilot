@@ -186,7 +186,7 @@ enum RemoteText {
         "trackpadScrollInertia": "滚动惯性",
         "trackpadDone": "完成",
         "trackpadHideKeyboard": "收起键盘",
-        "trackpadGesturesHint": "单指移动光标；轻点＝左键；在输入框上连点两下＝打开键盘，其他位置＝双击；轻点两下后按住＝拖动；双指滑动＝滚动；双指轻点＝右键。触控板四边的箭头切换握持方向，点亮的箭头是当前朝向。",
+        "trackpadGesturesHint": "单指移动光标；轻点＝左键，点在输入框上会打开键盘，连点两下＝双击；轻点两下后按住＝拖动；双指滑动＝滚动；双指轻点＝右键。触控板四边的箭头切换握持方向，点亮的箭头是当前朝向。",
         "errorTextInputUnavailable": "Mac 上的输入框已失去焦点。",
     ]
 
@@ -348,7 +348,7 @@ enum RemoteText {
         "trackpadScrollInertia": "Scrolling inertia",
         "trackpadDone": "Done",
         "trackpadHideKeyboard": "Hide keyboard",
-        "trackpadGesturesHint": "One finger moves the cursor; tap = left click; double-tap on a text field = keyboard, elsewhere = double click; double-tap and hold = drag; two-finger slide = scroll; two-finger tap = right click. The arrows on the trackpad edges switch the hold; the lit arrow is the current one.",
+        "trackpadGesturesHint": "One finger moves the cursor; tap = left click — tapping a text field opens the keyboard, double-tap = double click; double-tap and hold = drag; two-finger slide = scroll; two-finger tap = right click. The arrows on the trackpad edges switch the hold; the lit arrow is the current one.",
         "errorTextInputUnavailable": "The Mac text field lost focus.",
     ]
 }

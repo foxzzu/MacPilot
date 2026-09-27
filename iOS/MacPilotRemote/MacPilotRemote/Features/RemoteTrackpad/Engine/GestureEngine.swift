@@ -17,7 +17,7 @@ enum GestureOutput: Equatable {
     /// The fingers lifted mid-scroll; carries the finger velocity (points/s)
     /// so the pipeline can start the glide.
     case scrollEnd(velocityX: Double, velocityY: Double)
-    /// The second quick tap asks the Mac whether the pointer is over text.
+    /// A quiet tap asks the Mac whether the pointer landed on text.
     case requestKeyboard
 }
 
@@ -197,15 +197,20 @@ struct GestureEngine {
                 lastTapEndedAt = nil
                 return []
             }
-            if finger.armedForDrag, keyboardEnabled {
-                lastTapEndedAt = nil
-                return [.requestKeyboard]
-            }
             lastTapEndedAt = time
-            // The click pair itself is the click; a second tap inside the
-            // window arrives as another pair, which the Mac reads as a double
-            // click. An armed tap that holds or moves becomes a drag instead.
-            return [.click(button: .left, action: .down), .click(button: .left, action: .up)]
+            // The click pair is the click; a second tap inside the window
+            // arrives as another pair, which the Mac reads as a double click.
+            // An armed tap that holds or moves becomes a drag instead. Every
+            // tap also asks whether the pointer landed on text — the same
+            // deal as clicking a field with a real mouse.
+            var outputs: [GestureOutput] = [
+                .click(button: .left, action: .down),
+                .click(button: .left, action: .up),
+            ]
+            if keyboardEnabled {
+                outputs.append(.requestKeyboard)
+            }
+            return outputs
 
         case .twoFinger(let gesture):
             mode = .idle
