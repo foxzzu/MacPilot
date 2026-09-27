@@ -417,7 +417,7 @@ enum AppText {
         "languageDescription": "选择 MacPilot 的显示语言。更改会立即生效。", "systemLanguage": "跟随系统",
         "english": "English", "simplifiedChinese": "简体中文", "checkNow": "立即检查", "startAtLogin": "登录时启动",
         "startAtLoginHint": "登录 Mac 后自动在后台启动 MacPilot。",
-        "showApp": "显示 MacPilot", "quitApp": "退出 MacPilot", "enabledStatus": "MacPilot：已启用",
+        "quitApp": "退出 MacPilot", "enabledStatus": "MacPilot：已启用",
         "disabledStatus": "MacPilot：已停用", "disableApp": "停用 MacPilot", "enableApp": "启用 MacPilot",
         "loginError": "无法更新登录启动项：%@", "loginItemNeedsApproval": "macOS 正在等待你允许 MacPilot 登录时启动，请在“系统设置 → 通用 → 登录项与扩展”里打开它。", "aboutAutomation": "自动化", "manageRules": "管理应用规则和界面偏好。", "githubProject": "GitHub 项目", "githubProjectDescription": "在 GitHub 查看 MacPilot 的源代码、版本发布和问题反馈。", "githubProjectLink": "github.com/%@",
         "quitsIn": "将在 %d 分钟后退出",
@@ -1336,7 +1336,7 @@ enum AppText {
             "import": "Import",
             "minute": "minute", "minutes": "minutes", "language": "Language", "languageDescription": "Choose MacPilot’s display language. Changes apply immediately.",
             "systemLanguage": "System Language", "english": "English", "simplifiedChinese": "Simplified Chinese", "checkNow": "Check now",
-            "startAtLogin": "Start at Login", "startAtLoginHint": "Launch MacPilot automatically in the background when you log in.", "showApp": "Show MacPilot", "quitApp": "Quit MacPilot", "enabledStatus": "MacPilot: Enabled",
+            "startAtLogin": "Start at Login", "startAtLoginHint": "Launch MacPilot automatically in the background when you log in.", "quitApp": "Quit MacPilot", "enabledStatus": "MacPilot: Enabled",
             "disabledStatus": "MacPilot: Disabled", "disableApp": "Disable MacPilot", "enableApp": "Enable MacPilot",
             "loginError": "Couldn’t update the login item: %@", "loginItemNeedsApproval": "macOS is waiting for you to allow MacPilot to start at login. Turn it on in System Settings → General → Login Items & Extensions.", "aboutAutomation": "AUTOMATION", "manageRules": "Manage app rules and interface preferences.", "githubProject": "GitHub Project", "githubProjectDescription": "View MacPilot’s source code, releases, and issue tracker on GitHub.", "githubProjectLink": "github.com/%@",
             "quitsIn": "Quits in %d min",
@@ -5319,7 +5319,6 @@ struct MenuBarView: View {
             showMainWindow()
         }
         Button(model.t("settings")) { model.requestSection(.settings); showMainWindow() }
-        Button(model.t("showApp"), action: showMainWindow)
         Button(model.t("quitApp")) { NSApp.terminate(nil) }
     }
 
