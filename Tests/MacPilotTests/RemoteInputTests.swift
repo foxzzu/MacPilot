@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import MacPilotRemoteProtocol
 import Testing
@@ -36,6 +37,41 @@ final class FakeScrollInjector: ScrollInjecting {
 
     func scroll(dx: Double, dy: Double) {
         scrolls.append((dx, dy))
+    }
+}
+
+@Suite("CGEvent cursor injection")
+@MainActor
+struct MouseInjectorEventTests {
+    @Test("move event targets the displaced cursor position")
+    func moveTargetsDisplacedPosition() throws {
+        let source = try #require(CGEventSource(stateID: .hidSystemState))
+        let origin = CGPoint(x: 250, y: 300)
+        let event = try #require(MouseInjector.moveEvent(
+            source: source,
+            location: origin,
+            dx: 12,
+            dy: -7,
+            buttons: []
+        ))
+        #expect(event.type == .mouseMoved)
+        #expect(event.location == CGPoint(x: 262, y: 293))
+        #expect(event.getIntegerValueField(.mouseEventDeltaX) == 12)
+        #expect(event.getIntegerValueField(.mouseEventDeltaY) == -7)
+    }
+
+    @Test("drag event targets the displaced cursor position")
+    func dragTargetsDisplacedPosition() throws {
+        let source = try #require(CGEventSource(stateID: .hidSystemState))
+        let event = try #require(MouseInjector.moveEvent(
+            source: source,
+            location: CGPoint(x: 250, y: 300),
+            dx: -9,
+            dy: 4,
+            buttons: [.left]
+        ))
+        #expect(event.type == .leftMouseDragged)
+        #expect(event.location == CGPoint(x: 241, y: 304))
     }
 }
 

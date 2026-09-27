@@ -45,17 +45,28 @@ final class MouseInjector: MouseInjecting {
 
     func moveCursor(dx: Double, dy: Double, buttons: RemoteInputButtons) {
         guard let source, let location = CGEvent(source: source)?.location else { return }
+        guard let event = Self.moveEvent(source: source, location: location, dx: dx, dy: dy, buttons: buttons) else { return }
+        event.post(tap: .cghidEventTap)
+    }
+
+    static func moveEvent(
+        source: CGEventSource,
+        location: CGPoint,
+        dx: Double,
+        dy: Double,
+        buttons: RemoteInputButtons
+    ) -> CGEvent? {
         let dragging = buttons.contains(.left)
         let type: CGEventType = dragging ? .leftMouseDragged : .mouseMoved
         guard let event = CGEvent(
             mouseEventSource: source,
             mouseType: type,
-            mouseCursorPosition: location,
+            mouseCursorPosition: CGPoint(x: location.x + dx, y: location.y + dy),
             mouseButton: .left
-        ) else { return }
+        ) else { return nil }
         event.setIntegerValueField(.mouseEventDeltaX, value: Int64(dx.rounded()))
         event.setIntegerValueField(.mouseEventDeltaY, value: Int64(dy.rounded()))
-        event.post(tap: .cghidEventTap)
+        return event
     }
 
     func click(button: RemoteInputButton, action: RemoteInputAction) {
