@@ -23,8 +23,7 @@ enum TrackpadPhase: Equatable {
     var isActiveLike: Bool { self == .active || self == .reconnecting }
 }
 
-/// Which way the phone is turned, named after the direction the top edge
-/// points — the same convention as iOS's landscape-left/right. Deliberately
+/// Which way the phone is turned, by the hold each case selects. Deliberately
 /// not the system rotation: someone lying on a couch with the phone flat must
 /// not have the surface flip under their fingers when the gyroscope wakes up.
 ///
@@ -33,11 +32,11 @@ enum TrackpadPhase: Equatable {
 enum TrackpadOrientation: String, CaseIterable {
     /// Phone upright: the top edge is up.
     case top = "portrait"
-    /// Phone turned to the left: the top edge points left.
+    /// The left-edge-up hold: the phone's top edge swings to the right.
     case left = "left"
     /// Phone upside down: the bottom edge is up.
     case bottom = "bottom"
-    /// Phone turned to the right: the top edge points right.
+    /// The right-edge-up hold: the phone's top edge swings to the left.
     case right = "landscape"
 
     /// The sideways holds: the keyboard rotates to match these.

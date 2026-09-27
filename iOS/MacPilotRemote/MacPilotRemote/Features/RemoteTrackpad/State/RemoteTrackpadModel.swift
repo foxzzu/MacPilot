@@ -485,9 +485,9 @@ final class RemoteTrackpadModel: ObservableObject {
         if interfaceMatchesHold { return (dx, dy) }
         switch orientation {
         case .top: return (dx, dy)
-        case .left: return (dy, -dx)
+        case .left: return (-dy, dx)
         case .bottom: return (-dx, -dy)
-        case .right: return (-dy, dx)
+        case .right: return (dy, -dx)
         }
     }
 

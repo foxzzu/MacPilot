@@ -36,8 +36,9 @@ final class InterfaceOrientationController {
         }
     }
 
-    /// The hold's matching interface orientation, following iOS's own naming:
-    /// a hold turned to the left is `landscapeLeft`, and vice versa.
+    /// The hold's matching interface orientation: the right-edge-up hold
+    /// (`.right`) reads upright as `landscapeRight`, and the left-edge-up
+    /// hold as `landscapeLeft`.
     static func mask(for hold: TrackpadOrientation) -> UIInterfaceOrientationMask {
         switch hold {
         case .left: return .landscapeLeft
