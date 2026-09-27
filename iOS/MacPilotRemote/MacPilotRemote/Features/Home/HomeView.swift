@@ -7,10 +7,9 @@ struct HomeView: View {
     @EnvironmentObject private var appModel: RemoteAppModel
     @Binding var selectedTab: RootTab
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
-    ]
+    /// Adaptive so the action grid fills an iPad's width instead of
+    /// stretching two columns across it; on a phone it still lands on two.
+    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 14)]
 
     @State private var trackpadModel: RemoteTrackpadModel?
     @State private var trackpadVisible = false

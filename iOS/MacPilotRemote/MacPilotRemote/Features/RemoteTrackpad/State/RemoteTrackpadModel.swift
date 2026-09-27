@@ -113,6 +113,9 @@ final class RemoteTrackpadModel: ObservableObject {
     func open(appModel: RemoteAppModel) {
         guard phase == .idle else { return }
         self.appModel = appModel
+        // Freeze the page at whatever orientation it opened in: rotating the
+        // device mid-gesture must never flip the surface under a finger.
+        InterfaceOrientationController.shared.freezeCurrentOrientation()
         // Defense in depth for a Mac that does not advertise the realtime
         // channel: sending `beginRealtimeInput` anyway would make an older
         // Mac fail to decode the command and drop the whole session. Say so
@@ -132,8 +135,6 @@ final class RemoteTrackpadModel: ObservableObject {
     func close() {
         guard phase != .idle, phase != .exiting else { return }
         phase = .exiting
-        // The page is leaving; the rest of the app is portrait.
-        InterfaceOrientationController.shared.setSupported(.portrait)
         beginTask?.cancel()
         beginTask = nil
         pending.removeAll()
@@ -145,6 +146,13 @@ final class RemoteTrackpadModel: ObservableObject {
         keyboardRecheckTask?.cancel()
         keyboardRecheckTask = nil
         keyboardRecheckPending = false
+        // Last rotation word: the keyboardActive reset above re-freezes via
+        // its observer, so the release back to the resting mask has to come
+        // after it — the rest of the app rotates freely on an iPad and stays
+        // portrait on a phone.
+        InterfaceOrientationController.shared.setSupported(
+            InterfaceOrientationController.baseMask
+        )
         let appModel = self.appModel
         let pendingText = textInputTask
         Task {
@@ -248,16 +256,21 @@ final class RemoteTrackpadModel: ObservableObject {
     /// The scene only ever turns for the keyboard: with the keyboard up in a
     /// sideways hold it rotates to that hold so the keys rise from the long
     /// edge. Tapping an orientation arrow never rotates anything — it only
-    /// changes the finger→cursor mapping.
+    /// changes the finger→cursor mapping. Otherwise the page sits frozen at
+    /// the orientation it opened in.
     private func syncInterfaceRotation() {
         let landscape = keyboardActive && orientation.isLandscape
         if landscape != interfaceMatchesHold {
             interfaceMatchesHold = landscape
             resetMotionBuffers()
         }
-        InterfaceOrientationController.shared.setSupported(
-            landscape ? InterfaceOrientationController.mask(for: orientation) : .portrait
-        )
+        if landscape {
+            InterfaceOrientationController.shared.setSupported(
+                InterfaceOrientationController.mask(for: orientation)
+            )
+        } else {
+            InterfaceOrientationController.shared.freezeCurrentOrientation()
+        }
     }
 
     // MARK: - Touch ingestion

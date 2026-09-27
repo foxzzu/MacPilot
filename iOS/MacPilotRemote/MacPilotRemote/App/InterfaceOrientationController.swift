@@ -14,13 +14,40 @@ final class InterfaceOrientationController {
 
     private static let logger = Logger(subsystem: "com.misswell.macpilot.remote", category: "Trackpad")
 
-    /// The interface orientations the app currently admits. Portrait except
-    /// while the keyboard is up in a landscape hold.
-    private(set) var supportedMask: UIInterfaceOrientationMask = .portrait
+    /// The interface orientations the app currently admits. Outside the
+    /// trackpad page an iPad rotates freely; an iPhone stays portrait.
+    private(set) var supportedMask: UIInterfaceOrientationMask = InterfaceOrientationController.baseMask
+
+    /// The resting mask: iPads get every orientation but upside down, phones
+    /// stay portrait — the remote actions are designed one-handed.
+    static var baseMask: UIInterfaceOrientationMask {
+        UIDevice.current.userInterfaceIdiom == .pad ? .allButUpsideDown : .portrait
+    }
 
     func setSupported(_ mask: UIInterfaceOrientationMask) {
         guard mask != supportedMask else { return }
         supportedMask = mask
+        request(mask)
+    }
+
+    /// Freezes the scene at its current orientation for the duration of the
+    /// trackpad page: rotating the device must never flip the surface under a
+    /// finger. On a phone this is simply the portrait lock it always was.
+    func freezeCurrentOrientation() {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
+            return
+        }
+        let mask: UIInterfaceOrientationMask
+        switch scene.interfaceOrientation {
+        case .landscapeLeft: mask = .landscapeLeft
+        case .landscapeRight: mask = .landscapeRight
+        default: mask = .portrait
+        }
+        setSupported(mask)
+    }
+
+    private func request(_ mask: UIInterfaceOrientationMask) {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
             return
