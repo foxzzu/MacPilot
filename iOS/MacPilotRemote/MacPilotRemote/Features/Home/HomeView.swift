@@ -20,7 +20,6 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     deviceCard
-                    statusHeader
                     actionGrid
                     levelsPanel
                     messageBanner
@@ -77,12 +76,12 @@ struct HomeView: View {
 
     // MARK: - Device card
 
-    /// The current device card: switcher menu on top, trackpad entry below —
-    /// the trackpad is the card's back face, which is why opening it flips.
+    /// Device switcher and trackpad entry share one compact top row. The
+    /// trackpad remains the card's back face when opening it flips.
     private var deviceCard: some View {
-        VStack(spacing: 0) {
+        HStack(spacing: 0) {
             deviceSwitcher
-            Divider().padding(.leading, 16)
+            Divider().padding(.vertical, 12)
             trackpadRow
         }
         .background(
@@ -111,28 +110,38 @@ struct HomeView: View {
                 Label(appModel.text("manageMacs"), systemImage: "plus.circle")
             }
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 9) {
                 Image(systemName: "desktopcomputer")
-                    .font(.title3)
+                    .font(.body)
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(appModel.text("controllingMac"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(appModel.pairedMacs.isEmpty ? appModel.text("chooseMac") : appModel.activeMacName)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Circle().fill(statusColor).frame(width: 6, height: 6)
+                        Text(appModel.text(appModel.connectionState.titleKey))
+                        if let latency = appModel.latencyMs, appModel.connectionState.isConnected {
+                            Text("·")
+                            Text(appModel.text("latency", latency))
+                                .monospacedDigit()
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                Spacer(minLength: 8)
-                Text(appModel.text("switchMac"))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
-            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 14)
+            .padding(.trailing, 10)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
         .accessibilityLabel(appModel.text("switchMacAccessibility", appModel.activeMacName))
     }
@@ -143,30 +152,21 @@ struct HomeView: View {
     /// strictly worse than a disabled row.
     private var trackpadRow: some View {
         Button(action: openTrackpad) {
-            HStack(spacing: 12) {
+            VStack(spacing: 4) {
                 Image(systemName: "computermouse")
-                    .font(.title3)
+                    .font(.body)
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(appModel.text("trackpadEntry"))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Text(trackpadSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
+                Text(appModel.text("trackpadEntry"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.primary)
             }
-            .padding(16)
+            .frame(width: 88, height: 59)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!trackpadReady)
         .accessibilityLabel(appModel.text("trackpadEntry"))
+        .accessibilityHint(trackpadSubtitle)
     }
 
     private var trackpadReady: Bool {
@@ -189,28 +189,6 @@ struct HomeView: View {
         case .online: appModel.text("online")
         case .offline: appModel.text("offline")
         }
-    }
-
-    private var statusHeader: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 9, height: 9)
-            Text(appModel.text(appModel.connectionState.titleKey))
-                .font(.subheadline.weight(.medium))
-            if let latency = appModel.latencyMs, appModel.connectionState.isConnected {
-                Text(appModel.text("latency", latency))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
     }
 
     private var statusColor: Color {
