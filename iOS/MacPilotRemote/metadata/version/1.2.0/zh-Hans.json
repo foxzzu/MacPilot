@@ -1,0 +1,7 @@
+{
+  "description": "PilotNest Remote 是 MacPilot 的 iPhone 遥控器。iPhone 与 Mac 在同一 Wi-Fi 下即可直连，一键锁屏、黑屏、解锁或唤醒解锁；不在同一网络时还能通过蓝牙保底链路继续控制。\n\n主要功能\n• 一键锁屏 / 黑屏 / 解锁 / 唤醒解锁\n• 局域网直连，不经过任何服务器\n• 蓝牙保底链路，跨网段也能控制\n• 多台 Mac 管理，可设置默认设备\n• 6 位配对码完成配对，通信全程加密\n• 连接性能诊断：发现、握手、往返延迟一目了然\n\n使用前提\n需要在 Mac 上安装 MacPilot，并在「远程控制」设置中开启 iPhone 遥控：\nhttps://github.com/misswell/MacPilot\n\n隐私说明\n所有通信都在你的设备之间直连完成，不经过任何服务器，我们不收集任何数据。Mac 的登录密码始终保存在 Mac 上，不会传输到 iPhone。",
+  "keywords": "mac,锁屏,解锁,黑屏,远程,遥控,唤醒,电脑,专注,助手",
+  "marketingUrl": "https://github.com/misswell/MacPilot",
+  "supportUrl": "https://github.com/misswell/MacPilot/issues",
+  "whatsNew": "• 新增：模拟按压，轻触、按压、拖动手感更接近 MacBook 触控板\n• 原生支持 iPad，布局自适应\n• 触控板边缘箭头切换握持方向，横向握持时键盘横向弹出\n• 单指点按输入框即可打开远程键盘"
+}

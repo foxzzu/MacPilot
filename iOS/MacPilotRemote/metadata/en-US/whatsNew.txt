@@ -1,0 +1,4 @@
+• New: Remote Trackpad pressure simulation — light taps, firm presses and press-to-drag now feel like a MacBook trackpad
+• Native iPad support with adaptive layout
+• Trackpad edge arrows switch the hold; landscape holds open the keyboard sideways
+• A single tap on a text field opens the remote keyboard

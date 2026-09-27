@@ -1,0 +1,7 @@
+{
+  "description": "MacPilot Remote is the iPhone remote for MacPilot. When your iPhone and Mac are on the same Wi-Fi they connect directly, so you can lock, blank, unlock or wake & unlock your Mac in one tap. When the network is out of reach, a Bluetooth fallback link keeps you in control.\n\nHighlights\n• One-tap Lock / Blank / Unlock / Wake & Unlock\n• Direct local-network connection — no servers in between\n• Bluetooth fallback link when Wi-Fi is out of reach\n• Manage multiple Macs and pick a default\n• Pair with a 6-digit code; all traffic is encrypted after pairing\n• Connection diagnostics: discovery, handshake and round-trip latency\n\nRequirements\nYou need MacPilot installed on your Mac with iPhone remote control enabled in its Remote Control settings:\nhttps://github.com/misswell/MacPilot\n\nPrivacy\nEverything happens device-to-device on your own network. No servers, no data collection. Your Mac login password never leaves the Mac.",
+  "keywords": "mac,lock,unlock,remote,control,blank,wake,desktop,companion,focus",
+  "marketingUrl": "https://github.com/misswell/MacPilot",
+  "supportUrl": "https://github.com/misswell/MacPilot/issues",
+  "whatsNew": "• New: Remote Trackpad pressure simulation — light taps, firm presses and press-to-drag now feel like a MacBook trackpad\n• Native iPad support with adaptive layout\n• Trackpad edge arrows switch the hold; landscape holds open the keyboard sideways\n• A single tap on a text field opens the remote keyboard"
+}
