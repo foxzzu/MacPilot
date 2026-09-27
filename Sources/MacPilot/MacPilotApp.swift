@@ -479,7 +479,24 @@ enum AppText {
         "awakeAgentClaudeCode": "Claude Code",
         "awakeAgentCodex": "Codex",
         "awakeAgentOpenCode": "OpenCode",
-        "awakeNotifyBatteryTitle": "MacPilot：电量不足", "awakeNotifyBatteryBody": "电量即将低于 %d%%，保持唤醒会话即将结束。"
+        "awakeNotifyBatteryTitle": "MacPilot：电量不足", "awakeNotifyBatteryBody": "电量即将低于 %d%%，保持唤醒会话即将结束。",
+        "awakeSaveProfile": "保存方案", "awakeProfiles": "我的方案",
+        "awakeProfilesHint": "方案保存一次完整的 Session 配置，点击「开始」即可按原样启动，无需重新选择参数。",
+        "awakeProfilesEmpty": "还没有方案。配置好 Session 后点击「保存方案」，下次一键开始。",
+        "awakeProfileNew": "新建方案", "awakeProfileStart": "开始",
+        "awakeProfileSaveTitle": "保存当前 Session 配置",
+        "awakeProfileSaveHint": "保存 Session 时长、显示器、合盖运行与电量保护配置，随时一键开始。",
+        "awakeProfileName": "方案名称", "awakeProfileNamePlaceholder": "例如：AI 编程",
+        "awakeProfileOverwriteTitle": "覆盖方案？", "awakeProfileOverwriteMessage": "已有“%@”。是否覆盖它的配置？", "awakeProfileOverwrite": "覆盖",
+        "awakeProfileEditTitle": "编辑方案", "awakeProfileDuplicate": "复制方案", "awakeProfileDelete": "删除方案",
+        "awakeProfileDuplicateSuffix": "副本", "awakeProfileSaveChanges": "保存修改", "awakeProfileActions": "方案操作",
+        "awakeProfileDeleteTitle": "删除方案？", "awakeProfileDeleteMessage": "“%@”将被删除，删除后不可恢复。",
+        "awakeProfileLastUsed": "最近使用：%@", "awakeProfileNeverUsed": "从未使用",
+        "awakeQuickLaunch": "快速启动",
+        "awakeProfileSwitchTitle": "切换 Session？", "awakeProfileSwitchMessage": "当前已有：%1$@。是否切换到：%2$@？", "awakeProfileSwitchConfirm": "切换",
+        "awakeRemaining": "剩余 %@",
+        "awakeLaunchProfileEnabled": "启动 MacPilot 后自动运行方案", "awakeLaunchProfilePicker": "默认方案",
+        "awakeLaunchProfileMissing": "所选方案已被删除，请重新选择。"
         , "launch": "启动", "launchSubtitle": "在登录后按设定延迟启动应用。", "launchApps": "启动应用",
         "addLaunchApp": "添加启动应用", "addLaunchRule": "添加启动规则", "editLaunchRule": "编辑启动规则",
         "launchRuleDetail": "选择一个应用，并设置从 MacPilot 登录启动开始计算的延迟秒数。",
@@ -1399,6 +1416,23 @@ enum AppText {
             "awakeAgentCodex": "Codex",
             "awakeAgentOpenCode": "OpenCode",
             "awakeNotifyBatteryTitle": "MacPilot: Battery running low", "awakeNotifyBatteryBody": "The battery is about to drop below %d%% and the Awake sessions will end.",
+            "awakeSaveProfile": "Save Profile", "awakeProfiles": "My Profiles",
+            "awakeProfilesHint": "A profile stores one complete session setup. Click Start to launch it exactly as saved — no need to pick the options again.",
+            "awakeProfilesEmpty": "No profiles yet. Set up a session and click Save Profile to start it with one click next time.",
+            "awakeProfileNew": "New Profile", "awakeProfileStart": "Start",
+            "awakeProfileSaveTitle": "Save Current Session Setup",
+            "awakeProfileSaveHint": "Stores the session duration, display, closed-lid, and battery-protection setup for one-click starts.",
+            "awakeProfileName": "Profile Name", "awakeProfileNamePlaceholder": "e.g. AI Coding",
+            "awakeProfileOverwriteTitle": "Overwrite Profile?", "awakeProfileOverwriteMessage": "“%@” already exists. Overwrite its setup?", "awakeProfileOverwrite": "Overwrite",
+            "awakeProfileEditTitle": "Edit Profile", "awakeProfileDuplicate": "Duplicate Profile", "awakeProfileDelete": "Delete Profile",
+            "awakeProfileDuplicateSuffix": " copy", "awakeProfileSaveChanges": "Save Changes", "awakeProfileActions": "Profile Actions",
+            "awakeProfileDeleteTitle": "Delete Profile?", "awakeProfileDeleteMessage": "“%@” will be deleted. This cannot be undone.",
+            "awakeProfileLastUsed": "Last used: %@", "awakeProfileNeverUsed": "Never used",
+            "awakeQuickLaunch": "Quick Launch",
+            "awakeProfileSwitchTitle": "Switch Session?", "awakeProfileSwitchMessage": "Currently running: %1$@. Switch to %2$@?", "awakeProfileSwitchConfirm": "Switch",
+            "awakeRemaining": "%@ remaining",
+            "awakeLaunchProfileEnabled": "Run a profile when MacPilot launches", "awakeLaunchProfilePicker": "Default Profile",
+            "awakeLaunchProfileMissing": "The selected profile was deleted. Pick another one.",
             "launch": "Launch", "launchSubtitle": "Launch apps after their configured delay following login.", "launchApps": "Launch Apps",
             "addLaunchApp": "Add launch app", "addLaunchRule": "Add launch rule", "editLaunchRule": "Edit launch rule",
             "launchRuleDetail": "Choose an app and set its delay in seconds from when MacPilot starts at login.",
@@ -1756,6 +1790,7 @@ final class MacPilotModel: ObservableObject {
         var clipboard: ClipboardSettings
         var awake: AwakeSettings
         var awakeTriggers: [AwakeTrigger]
+        var awakeProfiles: [AwakeSessionProfile]
         var remoteControl: RemoteControlSettings
         var dockGroups: DockGroupsSettings
 
@@ -1770,11 +1805,11 @@ final class MacPilotModel: ObservableObject {
             case bleUnlock, fileCompression
             case screenCapture, screenRecording, pictureInPicture
             case inputSources, windowSwitcher, smoothScrolling, clipboard
-            case awake, awakeTriggers, remoteControl, dockGroups
+            case awake, awakeTriggers, awakeProfiles, remoteControl, dockGroups
         }
 
-        init(enabledFeatures: Set<MainSection>, rules: [QuitRule], isEnforcing: Bool, language: AppLanguage, launchRules: [LaunchRule], isLaunchSchedulingEnabled: Bool, launchesAtLogin: Bool, lastScheduledBootSession: String?, automaticUpdateChecks: Bool, bleUnlock: BLEUnlockSettings, fileCompression: FolderCompressionSettings, screenCapture: ScreenCaptureSettings, screenRecording: ScreenRecordingSettings, pictureInPicture: PictureInPictureSettings, inputSources: InputSourceSettings, windowSwitcher: WindowSwitcherSettings, smoothScrolling: SmoothScrollSettings, clipboard: ClipboardSettings, awake: AwakeSettings, awakeTriggers: [AwakeTrigger], remoteControl: RemoteControlSettings, dockGroups: DockGroupsSettings) {
-            version = 25
+        init(enabledFeatures: Set<MainSection>, rules: [QuitRule], isEnforcing: Bool, language: AppLanguage, launchRules: [LaunchRule], isLaunchSchedulingEnabled: Bool, launchesAtLogin: Bool, lastScheduledBootSession: String?, automaticUpdateChecks: Bool, bleUnlock: BLEUnlockSettings, fileCompression: FolderCompressionSettings, screenCapture: ScreenCaptureSettings, screenRecording: ScreenRecordingSettings, pictureInPicture: PictureInPictureSettings, inputSources: InputSourceSettings, windowSwitcher: WindowSwitcherSettings, smoothScrolling: SmoothScrollSettings, clipboard: ClipboardSettings, awake: AwakeSettings, awakeTriggers: [AwakeTrigger], awakeProfiles: [AwakeSessionProfile], remoteControl: RemoteControlSettings, dockGroups: DockGroupsSettings) {
+            version = 26
             self.enabledFeatures = enabledFeatures.map(\.rawValue).sorted()
             self.rules = rules
             self.isEnforcing = isEnforcing
@@ -1795,6 +1830,7 @@ final class MacPilotModel: ObservableObject {
             self.clipboard = clipboard
             self.awake = awake
             self.awakeTriggers = awakeTriggers
+            self.awakeProfiles = awakeProfiles
             self.remoteControl = remoteControl
             self.dockGroups = dockGroups
         }
@@ -1827,6 +1863,7 @@ final class MacPilotModel: ObservableObject {
             clipboard = try container.decodeIfPresent(ClipboardSettings.self, forKey: .clipboard) ?? ClipboardSettings()
             awake = try container.decodeIfPresent(AwakeSettings.self, forKey: .awake) ?? .standard
             awakeTriggers = try container.decodeIfPresent([AwakeTrigger].self, forKey: .awakeTriggers) ?? []
+            awakeProfiles = try container.decodeIfPresent([AwakeSessionProfile].self, forKey: .awakeProfiles) ?? []
             remoteControl = try container.decodeIfPresent(RemoteControlSettings.self, forKey: .remoteControl) ?? RemoteControlSettings()
             dockGroups = try container.decodeIfPresent(DockGroupsSettings.self, forKey: .dockGroups) ?? DockGroupsSettings()
         }
@@ -1856,6 +1893,7 @@ final class MacPilotModel: ObservableObject {
             try container.encode(clipboard, forKey: .clipboard)
             try container.encode(awake, forKey: .awake)
             try container.encode(awakeTriggers, forKey: .awakeTriggers)
+            try container.encode(awakeProfiles, forKey: .awakeProfiles)
             try container.encode(remoteControl, forKey: .remoteControl)
             try container.encode(dockGroups, forKey: .dockGroups)
         }
@@ -1928,6 +1966,8 @@ final class MacPilotModel: ObservableObject {
     /// first turns on "keep running with lid closed".
     let awake: AwakeSessionManager
     let awakeTriggers: AwakeTriggerEngine
+    /// 会话方案：Awake 的配置模板存储，持久化在 config.json 的 awakeProfiles。
+    let awakeProfiles = AwakeProfileStore()
     let featureLifecycle = FeatureLifecycleManager()
     lazy var exitFeature = ClosureManagedFeature(
         identifier: "exit",
@@ -2169,6 +2209,7 @@ final class MacPilotModel: ObservableObject {
         clipboard.persist = { [weak self] in self?.saveIfReady() }
         awake.persist = { [weak self] in self?.saveIfReady() }
         awakeTriggers.persist = { [weak self] in self?.saveIfReady() }
+        awakeProfiles.persist = { [weak self] in self?.saveIfReady() }
         // Dock Groups 的功能开关保存在 config.json；分组数据在 groups.json。
         dockGroups.persist = { [weak self] in self?.saveIfReady() }
         windowSwitcher.language = language
@@ -2199,7 +2240,11 @@ final class MacPilotModel: ObservableObject {
             activateFeatureRuntime(feature)
         }
         if isFeatureEnabled(.awake) {
-            awake.startDefaultSessionOnLaunchIfEnabled()
+            // 方案优先：配置了启动方案时运行方案；未配置、方案已被删除或
+            // 已有活跃会话时，回退到原有的默认会话自动启动。
+            if awake.startLaunchProfileSessionIfEnabled(from: awakeProfiles) == nil {
+                awake.startDefaultSessionOnLaunchIfEnabled()
+            }
         }
         if isFeatureEnabled(.exit) {
             evaluateRules()
@@ -2972,6 +3017,7 @@ final class MacPilotModel: ObservableObject {
         smoothScrolling.applyLoadedSettings(configuration.smoothScrolling)
         clipboard.applyLoadedSettings(configuration.clipboard, activate: false)
         awake.applyLoadedSettings(configuration.awake, activate: false)
+        awakeProfiles.load(configuration.awakeProfiles)
         awakeTriggers.applyLoadedTriggers(configuration.awakeTriggers, activate: false)
         remoteDeviceStore.applyLoadedSettings(configuration.remoteControl)
         dockGroups.applyLoadedSettings(configuration.dockGroups)
@@ -3014,6 +3060,7 @@ final class MacPilotModel: ObservableObject {
             clipboard: clipboard.settings,
             awake: awake.settings,
             awakeTriggers: awakeTriggers.triggers,
+            awakeProfiles: awakeProfiles.profiles,
             remoteControl: remoteDeviceStore.settings,
             dockGroups: dockGroups.settings
         )
@@ -3593,7 +3640,7 @@ struct ContentView: View {
         case .launch:
             LaunchRulesView(showingAdd: $showingLaunchAdd, editingRule: $editingLaunchRule)
         case .awake:
-            AwakeSettingsView(awake: model.awake, triggerEngine: model.awakeTriggers)
+            AwakeSettingsView(awake: model.awake, triggerEngine: model.awakeTriggers, profiles: model.awakeProfiles)
         case .ble:
             BLEUnlockView(ble: model.ble)
         case .remoteControl:
@@ -5224,7 +5271,7 @@ struct MenuBarView: View {
         // 保留各功能的即时操作，但只展示首页已启用的功能。
         if model.isFeatureEnabled(.awake) && awake.settings.isEnabled {
             Divider()
-            AwakeMenuView(awake: awake, triggerEngine: model.awakeTriggers) {
+            AwakeMenuView(awake: awake, triggerEngine: model.awakeTriggers, profiles: model.awakeProfiles) {
                 model.requestSection(.awake)
                 showMainWindow()
             }

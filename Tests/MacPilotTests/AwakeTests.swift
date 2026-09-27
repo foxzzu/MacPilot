@@ -327,7 +327,7 @@ struct AwakeTests {
         #expect(AppText.value("awakePowerAdapterSection", language: .english) == "Power Adapter")
     }
 
-    @Test func sessionProtectionSheetStartsFromFixedDefaultsEachTime() {
+    @Test func sessionProtectionDraftStartsWithStandardDefaults() {
         var previousDraft = AwakeSessionProtectionDraft()
         previousDraft.safetyPolicy.lowBatteryProtectionEnabled = false
         previousDraft.safetyPolicy.minimumBatteryLevel = 35
@@ -970,5 +970,301 @@ private final class TriggerTestPowerStateProvider: @MainActor AwakePowerStatePro
     func setState(_ state: PowerState) {
         self.state = state
         observers.values.forEach { $0() }
+    }
+}
+
+// MARK: - 会话方案（Session Profiles）
+
+@MainActor
+struct AwakeProfileTests {
+    private var fullConfiguration: AwakeSessionProfileConfiguration {
+        AwakeSessionProfileConfiguration(
+            durationMinutes: 240,
+            endCalculation: .pausesDuringSleep,
+            endOnForcedSleep: false,
+            preventDisplaySleep: true,
+            allowSystemSleepWhenDisplayOff: false,
+            preventClosedLidSleep: true,
+            blockScreenSaver: false,
+            screenSaverIdleMinutes: 45,
+            lowBatteryProtectionEnabled: true,
+            minimumBatteryLevel: 25,
+            warnBeforeBatteryTermination: false,
+            ignoreBatteryLevelOnExternalPower: true,
+            restartOnPowerReconnect: false
+        )
+    }
+
+    @Test func profileCaptureSnapsTheCompleteBusinessConfigurationFromSettings() {
+        var settings = AwakeSettings.standard
+        settings.defaultSession.durationMinutes = 240
+        settings.defaultPolicy.preventClosedLidSleep = true
+        settings.defaultPolicy.preventDisplaySleep = true
+        settings.defaultPolicy.endCalculation = .pausesDuringSleep
+        settings.defaultPolicy.blockScreenSaver = true
+        settings.defaultPolicy.screenSaverIdleMinutes = 60
+        settings.safetyPolicy.lowBatteryProtectionEnabled = false
+        settings.safetyPolicy.minimumBatteryLevel = 30
+        settings.defaultSession.warnBeforeBatteryTermination = true
+
+        let configuration = AwakeSessionProfileConfiguration.capture(from: settings)
+
+        #expect(configuration.durationMinutes == 240)
+        #expect(configuration.endCalculation == .pausesDuringSleep)
+        #expect(configuration.preventClosedLidSleep)
+        #expect(configuration.preventDisplaySleep)
+        #expect(configuration.blockScreenSaver)
+        #expect(configuration.screenSaverIdleMinutes == 60)
+        #expect(!configuration.lowBatteryProtectionEnabled)
+        #expect(configuration.minimumBatteryLevel == 30)
+        #expect(configuration.warnBeforeBatteryTermination)
+        #expect(configuration.ignoreBatteryLevelOnExternalPower)
+    }
+
+    @Test func untilDatePresetIsCapturedAsRemainingMinutes() {
+        var settings = AwakeSettings.standard
+        settings.defaultSession.usesUntilDate = true
+        let now = Date(timeIntervalSince1970: 10_000)
+        settings.defaultSession.untilDate = now.addingTimeInterval(90.5 * 60)
+
+        let configuration = AwakeSessionProfileConfiguration.capture(from: settings, now: now)
+        #expect(configuration.durationMinutes == 91)
+
+        // 已过期的指定时间按不限时处理，不会得到一个立即结束的方案。
+        settings.defaultSession.untilDate = now.addingTimeInterval(-60)
+        let expired = AwakeSessionProfileConfiguration.capture(from: settings, now: now)
+        #expect(expired.durationMinutes == 0)
+        #expect(expired.endCondition == .manual)
+    }
+
+    @Test func profilesRoundTripThroughCodableForPersistentStorage() throws {
+        let profile = AwakeSessionProfile(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            name: "AI 编程",
+            createdAt: Date(timeIntervalSince1970: 1_000),
+            lastUsedAt: Date(timeIntervalSince1970: 2_000),
+            configuration: fullConfiguration
+        )
+
+        let data = try JSONEncoder().encode([profile])
+        let decoded = try JSONDecoder().decode([AwakeSessionProfile].self, from: data)
+
+        #expect(decoded == [profile])
+    }
+
+    @Test func configurationsWithoutTheProfilesKeyMigrateToAnEmptyList() throws {
+        // 旧版 config.json 没有 awakeProfiles 键：解码后必须是空列表而不是失败。
+        let decoded = try JSONDecoder().decode(MacPilotModel.StoredConfiguration.self, from: Data("{}".utf8))
+        #expect(decoded.awakeProfiles.isEmpty)
+    }
+
+    @Test func launchingAProfileStartsASessionWithIdenticalParameters() {
+        let manager = AwakeSessionManager(
+            assertionController: TestAssertionController(),
+            powerStateProvider: TestPowerStateProvider(),
+            now: { Date(timeIntervalSince1970: 10_000) }
+        )
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "AI 编程", configuration: fullConfiguration)
+
+        let sessionID = store.launch(profile.id, in: manager)
+
+        #expect(sessionID != nil)
+        #expect(manager.activeSessionCount == 1)
+        let session = manager.activeSessions.first
+        #expect(session?.source == .profile(name: "AI 编程"))
+        #expect(session?.endCondition == .duration(240 * 60))
+        #expect(session?.policy == fullConfiguration.policy)
+        #expect(store.profile(id: profile.id)?.lastUsedAt != nil)
+    }
+
+    @Test func launchingAProfileAppliesProtectionOptionsGlobally() {
+        let manager = AwakeSessionManager(
+            assertionController: TestAssertionController(),
+            powerStateProvider: TestPowerStateProvider()
+        )
+        defer { manager.shutdown() }
+        var configuration = fullConfiguration
+        // warn 关闭：避免测试进程触碰通知授权。
+        configuration.warnBeforeBatteryTermination = false
+        configuration.lowBatteryProtectionEnabled = false
+        configuration.minimumBatteryLevel = 30
+        configuration.restartOnPowerReconnect = true
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "夜间挂机", configuration: configuration)
+
+        _ = store.launch(profile.id, in: manager)
+
+        #expect(!manager.settings.safetyPolicy.lowBatteryProtectionEnabled)
+        #expect(manager.settings.safetyPolicy.minimumBatteryLevel == 30)
+        #expect(manager.settings.defaultSession.restartOnPowerReconnect)
+    }
+
+    @Test func editingAProfileDoesNotAffectTheRunningSession() {
+        let manager = AwakeSessionManager(
+            assertionController: TestAssertionController(),
+            powerStateProvider: TestPowerStateProvider()
+        )
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "AI 编程", configuration: fullConfiguration)
+        _ = store.launch(profile.id, in: manager)
+
+        var edited = profile
+        edited.configuration.durationMinutes = 60
+        store.update(edited)
+
+        #expect(manager.activeSessions.first?.endCondition == .duration(240 * 60))
+    }
+
+    @Test func deletingAProfileDoesNotEndTheRunningSession() {
+        let manager = AwakeSessionManager(
+            assertionController: TestAssertionController(),
+            powerStateProvider: TestPowerStateProvider()
+        )
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "AI 编程", configuration: fullConfiguration)
+        _ = store.launch(profile.id, in: manager)
+
+        store.delete(id: profile.id)
+
+        #expect(manager.activeSessionCount == 1)
+        #expect(store.profiles.isEmpty)
+    }
+
+    @Test func switchingProfilesReplacesInteractiveSessionsButKeepsTriggerSessions() {
+        let manager = AwakeSessionManager(
+            assertionController: TestAssertionController(),
+            powerStateProvider: TestPowerStateProvider()
+        )
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "下载任务", configuration: fullConfiguration)
+
+        let triggerID = UUID()
+        _ = manager.startSession(source: .trigger(triggerID), endCondition: .manual, policy: .standard)
+        _ = manager.startManualSession(duration: 60)
+        #expect(manager.hasInteractiveSession)
+
+        _ = store.launch(profile.id, in: manager, replacingActiveSessions: true)
+
+        #expect(manager.activeSessionCount == 2)
+        let sources = manager.activeSessions.map(\.source)
+        #expect(sources.contains { if case .trigger(triggerID) = $0 { return true } else { return false } })
+        #expect(sources.contains(.profile(name: "下载任务")))
+        #expect(!sources.contains(.manual))
+        #expect(manager.activeInteractiveSessions.count == 1)
+    }
+
+    @Test func endingInteractiveSessionsStopsManualAndProfileSessionsOnly() {
+        let manager = AwakeSessionManager(
+            assertionController: TestAssertionController(),
+            powerStateProvider: TestPowerStateProvider()
+        )
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "合盖办公", configuration: fullConfiguration)
+
+        let triggerID = UUID()
+        _ = manager.startSession(source: .trigger(triggerID), endCondition: .manual, policy: .standard)
+        _ = manager.startManualSession(duration: 60)
+        _ = store.launch(profile.id, in: manager)
+
+        manager.endAllInteractiveSessions()
+
+        #expect(manager.activeSessionCount == 1)
+        #expect(manager.activeSessions.first?.source == .trigger(triggerID))
+    }
+
+    @Test func duplicateProfileCreatesAnIndependentUniquelyNamedCopy() {
+        let store = AwakeProfileStore()
+        let createdAt = Date(timeIntervalSince1970: 1_000)
+        let profile = store.create(name: "AI 编程", configuration: fullConfiguration, at: createdAt)
+
+        let copy = store.duplicate(id: profile.id, suggestedName: "AI 编程副本", at: createdAt)
+        #expect(copy?.name == "AI 编程副本")
+        #expect(copy?.id != profile.id)
+        #expect(copy?.configuration == profile.configuration)
+        #expect(copy?.lastUsedAt == nil)
+
+        let secondCopy = store.duplicate(id: profile.id, suggestedName: "AI 编程副本", at: createdAt)
+        #expect(secondCopy?.name == "AI 编程副本 2")
+
+        // 修改原方案不影响副本。
+        var edited = profile
+        edited.configuration.durationMinutes = 60
+        store.update(edited)
+        #expect(copy?.configuration.durationMinutes == 240)
+    }
+
+    @Test func overwritingByNameKeepsIdentityAndReplacesTheConfiguration() {
+        let store = AwakeProfileStore()
+        let createdAt = Date(timeIntervalSince1970: 1_000)
+        let profile = store.create(name: "AI 编程", configuration: fullConfiguration, at: createdAt)
+
+        var replacement = fullConfiguration
+        replacement.durationMinutes = 30
+        #expect(store.overwriteConfiguration(of: profile.id, with: replacement))
+
+        let stored = store.profile(named: "AI 编程")
+        #expect(stored?.id == profile.id)
+        #expect(stored?.createdAt == createdAt)
+        #expect(stored?.configuration.durationMinutes == 30)
+        #expect(store.profiles.count == 1)
+
+        // 名称查找忽略首尾空白与大小写差异。
+        #expect(store.profile(named: "  ai 编程 ")?.id == profile.id)
+    }
+
+    @Test func launchProfileAutoStartOnlyFillsAnIdleState() {
+        let manager = AwakeSessionManager(
+            assertionController: TestAssertionController(),
+            powerStateProvider: TestPowerStateProvider()
+        )
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "AI 编程", configuration: fullConfiguration)
+
+        // 功能未启用 / 方案未配置时不启动。
+        #expect(manager.startLaunchProfileSessionIfEnabled(from: store) == nil)
+        manager.updateSettings {
+            $0.defaultSession.launchProfileEnabled = true
+            $0.defaultSession.launchProfileID = profile.id
+        }
+
+        let sessionID = manager.startLaunchProfileSessionIfEnabled(from: store)
+        #expect(sessionID != nil)
+        #expect(manager.activeSessions.first?.source == .profile(name: "AI 编程"))
+
+        // 已有会话时不重复启动。
+        #expect(manager.startLaunchProfileSessionIfEnabled(from: store) == nil)
+        #expect(manager.activeSessionCount == 1)
+
+        // 配置的方案被删除后回退失败（返回 nil），由调用方使用默认会话。
+        manager.endAllSessions()
+        store.delete(id: profile.id)
+        #expect(manager.startLaunchProfileSessionIfEnabled(from: store) == nil)
+        #expect(manager.activeSessionCount == 0)
+    }
+
+    @Test func profileSessionSourceRoundTripsThroughCodable() throws {
+        let source = SessionSource.profile(name: "AI 编程")
+        let data = try JSONEncoder().encode(source)
+        let decoded = try JSONDecoder().decode(SessionSource.self, from: data)
+        #expect(decoded == source)
+        #expect(source.isInteractive)
+        #expect(!SessionSource.trigger(UUID()).isInteractive)
+        #expect(!SessionSource.application(bundleID: "com.example.app").isInteractive)
+    }
+
+    @Test func availableNameNeverCollidesWithExistingProfiles() {
+        let store = AwakeProfileStore()
+        _ = store.create(name: "下载", configuration: fullConfiguration)
+        #expect(store.availableName(base: "下载") == "下载 2")
+        _ = store.create(name: "下载 2", configuration: fullConfiguration)
+        #expect(store.availableName(base: "下载") == "下载 3")
+        #expect(store.availableName(base: " 新方案 ") == "新方案")
     }
 }

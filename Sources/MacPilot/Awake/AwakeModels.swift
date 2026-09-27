@@ -9,6 +9,8 @@ enum SessionSource: Codable, Equatable, Sendable {
     case process(name: String)
     case file(URL)
     case automation(identifier: String)
+    /// 由保存的会话方案启动；名字随会话保存，方案删除后仍能正确显示。
+    case profile(name: String)
 
     private enum Kind: String, Codable {
         case manual
@@ -17,6 +19,7 @@ enum SessionSource: Codable, Equatable, Sendable {
         case process
         case file
         case automation
+        case profile
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -43,6 +46,8 @@ enum SessionSource: Codable, Equatable, Sendable {
             self = .file(try container.decode(URL.self, forKey: .url))
         case .automation:
             self = .automation(identifier: try container.decode(String.self, forKey: .identifier))
+        case .profile:
+            self = .profile(name: try container.decode(String.self, forKey: .name))
         }
     }
 
@@ -66,6 +71,18 @@ enum SessionSource: Codable, Equatable, Sendable {
         case .automation(let identifier):
             try container.encode(Kind.automation, forKey: .kind)
             try container.encode(identifier, forKey: .identifier)
+        case .profile(let name):
+            try container.encode(Kind.profile, forKey: .kind)
+            try container.encode(name, forKey: .name)
+        }
+    }
+
+    /// 用户主动开始的会话（手动或来自方案）。方案启动时接管这些会话；
+    /// 自动规则等触发产生的会话不在此列，仍由触发引擎管理。
+    var isInteractive: Bool {
+        switch self {
+        case .manual, .profile: true
+        case .trigger, .application, .process, .file, .automation: false
         }
     }
 }
@@ -354,6 +371,10 @@ struct AwakeDefaultSessionSettings: Codable, Equatable, Sendable {
     var restartOnPowerReconnect: Bool
     var autoStartOnLaunch: Bool
     var autoStartOnWake: Bool
+    /// 启动 MacPilot 后自动运行指定的会话方案；`false` 表示启动后不自动运行。
+    /// 方案优先于默认会话：配置了方案时启动路径只运行方案。
+    var launchProfileEnabled: Bool
+    var launchProfileID: UUID?
 
     static let standard = AwakeDefaultSessionSettings()
 
@@ -365,7 +386,9 @@ struct AwakeDefaultSessionSettings: Codable, Equatable, Sendable {
         ignoreBatteryLevelOnExternalPower: Bool = true,
         restartOnPowerReconnect: Bool = false,
         autoStartOnLaunch: Bool = false,
-        autoStartOnWake: Bool = false
+        autoStartOnWake: Bool = false,
+        launchProfileEnabled: Bool = false,
+        launchProfileID: UUID? = nil
     ) {
         self.durationMinutes = max(0, durationMinutes)
         self.usesUntilDate = usesUntilDate
@@ -375,6 +398,8 @@ struct AwakeDefaultSessionSettings: Codable, Equatable, Sendable {
         self.restartOnPowerReconnect = restartOnPowerReconnect
         self.autoStartOnLaunch = autoStartOnLaunch
         self.autoStartOnWake = autoStartOnWake
+        self.launchProfileEnabled = launchProfileEnabled
+        self.launchProfileID = launchProfileID
     }
 
     var endCondition: SessionEndCondition {
@@ -395,6 +420,8 @@ struct AwakeDefaultSessionSettings: Codable, Equatable, Sendable {
         case restartOnPowerReconnect
         case autoStartOnLaunch
         case autoStartOnWake
+        case launchProfileEnabled
+        case launchProfileID
     }
 
     init(from decoder: Decoder) throws {
@@ -407,7 +434,9 @@ struct AwakeDefaultSessionSettings: Codable, Equatable, Sendable {
             ignoreBatteryLevelOnExternalPower: try container.decodeIfPresent(Bool.self, forKey: .ignoreBatteryLevelOnExternalPower) ?? true,
             restartOnPowerReconnect: try container.decodeIfPresent(Bool.self, forKey: .restartOnPowerReconnect) ?? false,
             autoStartOnLaunch: try container.decodeIfPresent(Bool.self, forKey: .autoStartOnLaunch) ?? false,
-            autoStartOnWake: try container.decodeIfPresent(Bool.self, forKey: .autoStartOnWake) ?? false
+            autoStartOnWake: try container.decodeIfPresent(Bool.self, forKey: .autoStartOnWake) ?? false,
+            launchProfileEnabled: try container.decodeIfPresent(Bool.self, forKey: .launchProfileEnabled) ?? false,
+            launchProfileID: try container.decodeIfPresent(UUID.self, forKey: .launchProfileID)
         )
     }
 }

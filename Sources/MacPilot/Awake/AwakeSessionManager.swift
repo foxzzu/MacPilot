@@ -100,6 +100,11 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
     var activeSessionCount: Int { activeSessions.count }
     var isActive: Bool { !activeSessions.isEmpty }
     var hasManualSession: Bool { activeSessions.contains { $0.source == .manual } }
+    /// 用户主动开始的会话（手动或来自方案）。方案启动会接管这些会话。
+    var activeInteractiveSessions: [AwakeSession] {
+        activeSessions.filter { $0.source.isInteractive }
+    }
+    var hasInteractiveSession: Bool { !activeInteractiveSessions.isEmpty }
     var isSystemAssertionActive: Bool { assertionController.isSystemAssertionActive }
     var isDisplayAssertionActive: Bool { assertionController.isDisplayAssertionActive }
     var sharedPowerStateProvider: any AwakePowerStateProviding { powerStateProvider }
@@ -181,6 +186,58 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
             endCondition: settings.defaultSession.endCondition,
             policy: settings.defaultPolicy
         )
+    }
+
+    /// Starts a session from a saved profile. The profile is a configuration
+    /// template: its stored end condition and policy are applied verbatim, so
+    /// the session behaves exactly like the setup captured at save time.
+    /// The battery-protection and power-adapter options are global session
+    /// options in `AwakeSettings`, so like the protection sheet's confirm
+    /// path, applying a profile writes them back for every start path.
+    @discardableResult
+    func startProfileSession(
+        from profile: AwakeSessionProfile,
+        replacingActiveSessions: Bool = false
+    ) -> UUID? {
+        guard settings.isEnabled else { return nil }
+        if replacingActiveSessions {
+            let replacedIDs = activeInteractiveSessions.map(\.id)
+            for id in replacedIDs { markSessionEnded(id) }
+            if !replacedIDs.isEmpty {
+                logger.notice("Switching profiles ended \(replacedIDs.count, privacy: .public) interactive session(s)")
+            }
+        }
+        let configuration = profile.configuration
+        let shouldRequestBatteryAuthorization =
+            configuration.warnBeforeBatteryTermination
+            && !settings.defaultSession.warnBeforeBatteryTermination
+        updateSettings { settings in
+            configuration.applyProtectionSettings(to: &settings)
+        }
+        if shouldRequestBatteryAuthorization {
+            AwakeNotifications.requestAuthorization()
+        }
+        let id = startSession(
+            source: .profile(name: profile.name),
+            endCondition: configuration.endCondition,
+            policy: configuration.policy
+        )
+        refreshPowerState()
+        return id
+    }
+
+    /// Auto-starts the configured launch profile when the app starts. Only
+    /// fills an idle state; returns nil (nothing started) when disabled, a
+    /// session is already running, or the configured profile was deleted, so
+    /// the caller can fall back to the default session.
+    @discardableResult
+    func startLaunchProfileSessionIfEnabled(from store: AwakeProfileStore) -> UUID? {
+        guard settings.isEnabled, settings.defaultSession.launchProfileEnabled else { return nil }
+        guard activeSessions.isEmpty else { return nil }
+        guard let profileID = settings.defaultSession.launchProfileID,
+              let profile = store.profile(id: profileID) else { return nil }
+        logger.notice("Auto-starting launch profile: \(profile.name, privacy: .public)")
+        return startProfileSession(from: profile)
     }
 
     /// Called once by `MacPilotModel` after the stored configuration loads.
@@ -265,6 +322,16 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
 
     func endAllManualSessions() {
         endSessions(source: .manual)
+    }
+
+    /// Ends every session the user started on purpose (manual and profile
+    /// sessions). Automatic trigger sessions keep running and re-evaluate on
+    /// their own, matching how they behave everywhere else.
+    func endAllInteractiveSessions() {
+        let ids = activeInteractiveSessions.map(\.id)
+        guard !ids.isEmpty else { return }
+        for id in ids { markSessionEnded(id) }
+        refreshDesiredState()
     }
 
     func endAllSessions() {

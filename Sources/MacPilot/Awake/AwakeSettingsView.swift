@@ -27,8 +27,16 @@ struct AwakeSettingsView: View {
     @EnvironmentObject private var model: MacPilotModel
     @ObservedObject var awake: AwakeSessionManager
     @ObservedObject var triggerEngine: AwakeTriggerEngine
+    @ObservedObject var profiles: AwakeProfileStore
 
     @State private var isSessionProtectionSheetPresented = false
+    @State private var isSaveProfileSheetPresented = false
+    @State private var editingProfile: AwakeSessionProfile?
+    @State private var isProfileEditorPresented = false
+    @State private var profilePendingDeletion: AwakeSessionProfile?
+    @State private var profilePendingLaunch: AwakeSessionProfile?
+    @State private var showsProfileSwitchConfirmation = false
+    @State private var showsProfileDeletionConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -40,6 +48,7 @@ struct AwakeSettingsView: View {
 
                 sessionCard
                 sessionDetailsCard
+                profilesCard
                 AwakeTriggerListView(triggerEngine: triggerEngine)
                 powerStateCard
             }
@@ -51,8 +60,45 @@ struct AwakeSettingsView: View {
             awake.refreshClosedLidServiceState()
         }
         .sheet(isPresented: $isSessionProtectionSheetPresented) {
-            AwakeSessionProtectionSheet(awake: awake)
+            AwakeSessionProtectionSheet(awake: awake, profiles: profiles)
                 .environmentObject(model)
+        }
+        .sheet(isPresented: $isSaveProfileSheetPresented) {
+            AwakeProfileSaveSheet(profiles: profiles) {
+                AwakeSessionProfileConfiguration.capture(from: awake.settings)
+            }
+            .environmentObject(model)
+        }
+        .sheet(isPresented: $isProfileEditorPresented) {
+            if let editingProfile {
+                AwakeProfileEditorSheet(profiles: profiles, profile: editingProfile)
+                    .environmentObject(model)
+            } else {
+                AwakeProfileEditorSheet(profiles: profiles, configuration: AwakeSessionProfileConfiguration.capture(from: awake.settings))
+                    .environmentObject(model)
+            }
+        }
+        .confirmationDialog(
+            profileSwitchMessage,
+            isPresented: $showsProfileSwitchConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(model.t("awakeProfileSwitchConfirm")) {
+                guard let profile = profilePendingLaunch else { return }
+                profiles.launch(profile.id, in: awake, replacingActiveSessions: true)
+            }
+            Button(model.t("cancel"), role: .cancel) {}
+        }
+        .confirmationDialog(
+            model.t("awakeProfileDeleteMessage", profilePendingDeletion?.name ?? ""),
+            isPresented: $showsProfileDeletionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(model.t("awakeProfileDelete"), role: .destructive) {
+                guard let profile = profilePendingDeletion else { return }
+                profiles.delete(id: profile.id)
+            }
+            Button(model.t("cancel"), role: .cancel) {}
         }
     }
 
@@ -146,8 +192,11 @@ struct AwakeSettingsView: View {
                     isSessionProtectionSheetPresented = true
                 }
                 .macPilotProminentButtonStyle()
-                if awake.hasManualSession {
-                    Button(model.t("awakeStop"), action: awake.endAllManualSessions)
+                Button(model.t("awakeSaveProfile")) {
+                    isSaveProfileSheetPresented = true
+                }
+                if awake.hasInteractiveSession {
+                    Button(model.t("awakeStop"), action: awake.endAllInteractiveSessions)
                 }
             }
         }
@@ -202,6 +251,120 @@ struct AwakeSettingsView: View {
                 warningBanner(Label(model.t("awakeAssertionError", failure.code), systemImage: "exclamationmark.triangle.fill"))
             }
         }
+    }
+
+    /// 方案管理：列表按「最近使用」倒序，点击开始即可按保存的配置启动。
+    private var profilesCard: some View {
+        SettingsCard {
+            HStack {
+                Text(model.t("awakeProfiles")).font(.headline)
+                Spacer()
+                Button {
+                    editingProfile = nil
+                    isProfileEditorPresented = true
+                } label: {
+                    Label(model.t("awakeProfileNew"), systemImage: "plus")
+                }
+            }
+            Text(model.t("awakeProfilesHint"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if profiles.profiles.isEmpty {
+                Text(model.t("awakeProfilesEmpty"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(sortedProfiles) { profile in
+                    AwakeProfileRowView(
+                        profile: profile,
+                        summary: profileSummary(for: profile.configuration),
+                        onStart: { requestProfileLaunch(profile) },
+                        onEdit: {
+                            editingProfile = profile
+                            isProfileEditorPresented = true
+                        },
+                        onDuplicate: { duplicateProfile(profile) },
+                        onDelete: {
+                            profilePendingDeletion = profile
+                            showsProfileDeletionConfirmation = true
+                        }
+                    )
+                    if profile.id != sortedProfiles.last?.id {
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+
+    private var sortedProfiles: [AwakeSessionProfile] {
+        profiles.profiles.sorted { lhs, rhs in
+            switch (lhs.lastUsedAt, rhs.lastUsedAt) {
+            case let (lhsDate?, rhsDate?): lhsDate > rhsDate
+            case (nil, .some): false
+            case (.some, nil): true
+            default: lhs.createdAt > rhs.createdAt
+            }
+        }
+    }
+
+    /// 点击方案：空闲时直接启动；已有用户主动开始的 Session 时先确认切换。
+    private func requestProfileLaunch(_ profile: AwakeSessionProfile) {
+        guard awake.hasInteractiveSession else {
+            profiles.launch(profile.id, in: awake)
+            return
+        }
+        profilePendingLaunch = profile
+        showsProfileSwitchConfirmation = true
+    }
+
+    private func duplicateProfile(_ profile: AwakeSessionProfile) {
+        let base = profile.name + model.t("awakeProfileDuplicateSuffix")
+        _ = profiles.duplicate(id: profile.id, suggestedName: base)
+    }
+
+    private var profileSwitchMessage: String {
+        let separator = model.language.locale.language.languageCode?.identifier == "zh" ? "、" : ", "
+        let runningNames = awake.activeInteractiveSessions.map { sessionName($0) }.joined(separator: separator)
+        return model.t("awakeProfileSwitchMessage", runningNames, profilePendingLaunch?.name ?? "")
+    }
+
+    private func sessionName(_ session: AwakeSession) -> String {
+        if case .profile(let name) = session.source { return name }
+        return model.t("awakeManualSource")
+    }
+
+    /// 方案摘要：时长 + 关键行为，一行看懂这个方案会做什么。
+    private func profileSummary(for configuration: AwakeSessionProfileConfiguration) -> String {
+        var parts: [String] = [profileDurationText(configuration.durationMinutes)]
+        if configuration.preventClosedLidSleep {
+            parts.append(model.t("awakeClosedLidSleep"))
+        }
+        parts.append(
+            configuration.preventDisplaySleep
+                ? model.t("awakeDisplaySleepToggle")
+                : model.t("awakeDisplaySleepAllowed")
+        )
+        if configuration.lowBatteryProtectionEnabled {
+            parts.append(model.t("awakeEndSessionBelowBattery", configuration.minimumBatteryLevel))
+        }
+        if configuration.endCalculation == .pausesDuringSleep {
+            parts.append(model.t("awakeEndCalculationAwakeTime"))
+        }
+        if configuration.blockScreenSaver {
+            parts.append(model.t("awakeBlockScreenSaver"))
+        }
+        if configuration.endOnForcedSleep {
+            parts.append(model.t("awakeEndOnForcedSleep"))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func profileDurationText(_ minutes: Int) -> String {
+        guard minutes > 0 else { return model.t("awakeUnlimited") }
+        return Duration.seconds(TimeInterval(minutes) * 60)
+            .formatted(.units(allowed: [.hours, .minutes], width: .wide, maximumUnitCount: 2))
     }
 
     private func sectionLabel(_ title: String) -> some View {
@@ -424,17 +587,21 @@ struct AwakeSessionProtectionDraft {
     var restartOnPowerReconnect = false
     var autoStartOnLaunch = false
     var autoStartOnWake = false
+    var launchProfileEnabled = false
+    var launchProfileID: UUID?
 }
 
 private struct AwakeSessionProtectionSheet: View {
     @EnvironmentObject private var model: MacPilotModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var awake: AwakeSessionManager
+    @ObservedObject var profiles: AwakeProfileStore
 
     @State private var draft = AwakeSessionProtectionDraft()
 
-    init(awake: AwakeSessionManager) {
+    init(awake: AwakeSessionManager, profiles: AwakeProfileStore) {
         self.awake = awake
+        self.profiles = profiles
     }
 
     var body: some View {
@@ -475,7 +642,18 @@ private struct AwakeSessionProtectionSheet: View {
         }
         .frame(minWidth: 520, idealWidth: 560, minHeight: 580, idealHeight: 660)
         .onAppear {
-            draft = AwakeSessionProtectionDraft()
+            // 从当前设置初始化：弹窗展示的就是已保存的选项，确认时原样写回，
+            // 未触碰的项不会因为重新打开弹窗而被重置。
+            draft = AwakeSessionProtectionDraft(
+                safetyPolicy: awake.settings.safetyPolicy,
+                warnBeforeBatteryTermination: awake.settings.defaultSession.warnBeforeBatteryTermination,
+                ignoreBatteryLevelOnExternalPower: awake.settings.defaultSession.ignoreBatteryLevelOnExternalPower,
+                restartOnPowerReconnect: awake.settings.defaultSession.restartOnPowerReconnect,
+                autoStartOnLaunch: awake.settings.defaultSession.autoStartOnLaunch,
+                autoStartOnWake: awake.settings.defaultSession.autoStartOnWake,
+                launchProfileEnabled: awake.settings.defaultSession.launchProfileEnabled,
+                launchProfileID: awake.settings.defaultSession.launchProfileID
+            )
         }
     }
 
@@ -532,6 +710,24 @@ private struct AwakeSessionProtectionSheet: View {
                 .toggleStyle(.switch)
             Toggle(model.t("awakeAutoStartOnWake"), isOn: autoStartOnWakeBinding)
                 .toggleStyle(.switch)
+            Toggle(model.t("awakeLaunchProfileEnabled"), isOn: launchProfileEnabledBinding)
+                .toggleStyle(.switch)
+            if draft.launchProfileEnabled {
+                Picker(model.t("awakeLaunchProfilePicker"), selection: launchProfileIDBinding) {
+                    ForEach(profiles.profiles) { profile in
+                        Text(profile.name).tag(Optional(profile.id))
+                    }
+                }
+                if let selectedID = draft.launchProfileID, profiles.profile(id: selectedID) == nil {
+                    Text(model.t("awakeLaunchProfileMissing"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if profiles.profiles.isEmpty {
+                    Text(model.t("awakeProfilesEmpty"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -591,6 +787,20 @@ private struct AwakeSessionProtectionSheet: View {
         )
     }
 
+    private var launchProfileEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { draft.launchProfileEnabled },
+            set: { draft.launchProfileEnabled = $0 }
+        )
+    }
+
+    private var launchProfileIDBinding: Binding<UUID?> {
+        Binding(
+            get: { draft.launchProfileID },
+            set: { draft.launchProfileID = $0 }
+        )
+    }
+
     private func confirm() {
         let selected = draft
         let shouldRequestBatteryNotification =
@@ -608,8 +818,378 @@ private struct AwakeSessionProtectionSheet: View {
             settings.defaultSession.restartOnPowerReconnect = selected.restartOnPowerReconnect
             settings.defaultSession.autoStartOnLaunch = selected.autoStartOnLaunch
             settings.defaultSession.autoStartOnWake = selected.autoStartOnWake
+            settings.defaultSession.launchProfileEnabled = selected.launchProfileEnabled
+            settings.defaultSession.launchProfileID = selected.launchProfileID
+            // 启用了方案自启动但还没选方案时，回退到第一个方案，避免静默失效。
+            if selected.launchProfileEnabled, selected.launchProfileID == nil {
+                settings.defaultSession.launchProfileID = profiles.profiles.first?.id
+            }
         }
         _ = awake.startDefaultSession()
+        dismiss()
+    }
+}
+
+private struct AwakeProfileRowView: View {
+    @EnvironmentObject private var model: MacPilotModel
+    let profile: AwakeSessionProfile
+    let summary: String
+    let onStart: () -> Void
+    let onEdit: () -> Void
+    let onDuplicate: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(profile.name, systemImage: "flame.fill")
+                    .font(.body.weight(.semibold))
+                Spacer()
+                Button(model.t("awakeProfileStart"), action: onStart)
+                    .macPilotProminentButtonStyle()
+                    .controlSize(.small)
+                Menu {
+                    Button(model.t("edit"), action: onEdit)
+                    Button(model.t("awakeProfileDuplicate"), action: onDuplicate)
+                    Button(model.t("awakeProfileDelete"), role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(Text(model.t("awakeProfileActions")))
+            }
+            Text(summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(lastUsedText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var lastUsedText: String {
+        guard let lastUsedAt = profile.lastUsedAt else { return model.t("awakeProfileNeverUsed") }
+        return model.t(
+            "awakeProfileLastUsed",
+            lastUsedAt.formatted(.relative(presentation: .named).locale(model.language.locale))
+        )
+    }
+}
+
+/// 保存方案弹窗：命名当前配置。同名时先确认再覆盖。
+private struct AwakeProfileSaveSheet: View {
+    @EnvironmentObject private var model: MacPilotModel
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var profiles: AwakeProfileStore
+    let makeConfiguration: () -> AwakeSessionProfileConfiguration
+
+    @State private var name = ""
+    @State private var pendingOverwrite: AwakeSessionProfile?
+    @State private var showsOverwriteConfirmation = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(model.t("awakeProfileSaveTitle"))
+                        .font(.system(size: 24, weight: .bold))
+                    Text(model.t("awakeProfileSaveHint"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(model.t("awakeProfileName"))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                TextField(model.t("awakeProfileNamePlaceholder"), text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(24)
+
+            Spacer()
+
+            Divider()
+            HStack(spacing: 12) {
+                Spacer()
+                Button(model.t("cancel")) { dismiss() }
+                Button(model.t("save"), action: save)
+                    .macPilotProminentButtonStyle()
+                    .disabled(trimmedName.isEmpty)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+        }
+        .frame(minWidth: 440, idealWidth: 480, minHeight: 240, idealHeight: 260)
+        .confirmationDialog(
+            model.t("awakeProfileOverwriteMessage", pendingOverwrite?.name ?? ""),
+            isPresented: $showsOverwriteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(model.t("awakeProfileOverwrite"), action: overwrite)
+            Button(model.t("cancel"), role: .cancel) {}
+        }
+    }
+
+    private var trimmedName: String {
+        AwakeSessionProfile.normalizedName(name)
+    }
+
+    private func save() {
+        guard !trimmedName.isEmpty else { return }
+        if let existing = profiles.profile(named: trimmedName) {
+            pendingOverwrite = existing
+            showsOverwriteConfirmation = true
+            return
+        }
+        profiles.create(name: trimmedName, configuration: makeConfiguration())
+        dismiss()
+    }
+
+    private func overwrite() {
+        guard let existing = pendingOverwrite else { return }
+        profiles.overwriteConfiguration(of: existing.id, with: makeConfiguration())
+        dismiss()
+    }
+}
+
+/// 方案时长预设。方案不提供「直到指定时间」：绝对日期保存后必然过期，
+/// 保存流程会把剩余时间折算成分钟。
+private enum AwakeProfileDurationPreset: String, CaseIterable, Identifiable {
+    case unlimited
+    case thirtyMinutes
+    case oneHour
+    case twoHours
+    case fourHours
+    case customDuration
+
+    var id: String { rawValue }
+
+    var minutes: Int? {
+        switch self {
+        case .unlimited: 0
+        case .thirtyMinutes: 30
+        case .oneHour: 60
+        case .twoHours: 120
+        case .fourHours: 240
+        case .customDuration: nil
+        }
+    }
+
+    static func matching(minutes: Int) -> Self {
+        switch minutes {
+        case 0: .unlimited
+        case 30: .thirtyMinutes
+        case 60: .oneHour
+        case 120: .twoHours
+        case 240: .fourHours
+        default: .customDuration
+        }
+    }
+}
+
+/// 编辑 / 新建方案弹窗：完整可编辑的业务配置草稿，保存即更新方案本身，
+/// 不触碰运行中的 Session 与全局 Awake 设置。
+private struct AwakeProfileEditorSheet: View {
+    @EnvironmentObject private var model: MacPilotModel
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var profiles: AwakeProfileStore
+    let existingProfile: AwakeSessionProfile?
+
+    @State private var name: String
+    @State private var configuration: AwakeSessionProfileConfiguration
+
+    init(profiles: AwakeProfileStore, profile: AwakeSessionProfile) {
+        self.profiles = profiles
+        self.existingProfile = profile
+        _name = State(initialValue: profile.name)
+        _configuration = State(initialValue: profile.configuration)
+    }
+
+    /// 新建方案：以当前 Session 配置为起点。
+    init(profiles: AwakeProfileStore, configuration startingConfiguration: @autoclosure () -> AwakeSessionProfileConfiguration) {
+        self.profiles = profiles
+        self.existingProfile = nil
+        _name = State(initialValue: "")
+        _configuration = State(initialValue: startingConfiguration())
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(model.t(existingProfile == nil ? "awakeProfileNew" : "awakeProfileEditTitle"))
+                            .font(.system(size: 24, weight: .bold))
+                        Text(model.t("awakeProfileSaveHint"))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(model.t("awakeProfileName"))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    TextField(model.t("awakeProfileNamePlaceholder"), text: $name)
+                        .textFieldStyle(.roundedBorder)
+
+                    Divider()
+
+                    Picker(model.t("awakeSessionDuration"), selection: durationPresetBinding) {
+                        Text(model.t("awakeUnlimited")).tag(AwakeProfileDurationPreset.unlimited)
+                        Text(model.t("awake30Minutes")).tag(AwakeProfileDurationPreset.thirtyMinutes)
+                        Text(model.t("awakeOneHour")).tag(AwakeProfileDurationPreset.oneHour)
+                        Text(model.t("awakeTwoHours")).tag(AwakeProfileDurationPreset.twoHours)
+                        Text(model.t("awakeFourHours")).tag(AwakeProfileDurationPreset.fourHours)
+                        Text(model.t("awakeCustomDuration")).tag(AwakeProfileDurationPreset.customDuration)
+                    }
+
+                    if durationPreset == .customDuration {
+                        HStack {
+                            Text(model.t("awakeCustomDuration"))
+                            Spacer()
+                            TextField(model.t("awakeCustomDuration"), value: customDurationMinutesBinding, format: .number)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 90)
+                        }
+                    }
+
+                    Picker(model.t("awakeEndCalculation"), selection: $configuration.endCalculation) {
+                        Text(model.t("awakeEndCalculationTimer")).tag(SessionEndCalculation.timer)
+                        Text(model.t("awakeEndCalculationAwakeTime")).tag(SessionEndCalculation.pausesDuringSleep)
+                    }
+
+                    sectionLabel(model.t("awakeForceSleep"))
+                    Toggle(model.t("awakeEndOnForcedSleep"), isOn: $configuration.endOnForcedSleep)
+                        .toggleStyle(.switch)
+
+                    sectionLabel(model.t("awakeDisplaySection"))
+                    Toggle(model.t("awakeDisplaySleepAllowed"), isOn: displaySleepAllowedBinding)
+                        .toggleStyle(.switch)
+                    Toggle(model.t("awakeAllowSystemSleepWhenDisplayOff"), isOn: $configuration.allowSystemSleepWhenDisplayOff)
+                        .toggleStyle(.switch)
+
+                    Toggle(model.t("awakeClosedLidSleep"), isOn: $configuration.preventClosedLidSleep)
+                        .toggleStyle(.switch)
+                    Text(model.t("awakeClosedLidSleepHint"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    sectionLabel(model.t("awakeScreenSaver"))
+                    Toggle(model.t("awakeBlockScreenSaver"), isOn: $configuration.blockScreenSaver)
+                        .toggleStyle(.switch)
+                    if configuration.blockScreenSaver {
+                        SettingsSlider(
+                            value: screenSaverIdleBinding,
+                            in: 5...180,
+                            step: 5,
+                            label: model.t("awakeScreenSaverAllowsAfter", configuration.screenSaverIdleMinutes)
+                        )
+                    }
+
+                    sectionLabel(model.t("awakeBatteryProtection"))
+                    Toggle(
+                        model.t("awakeEndSessionBelowBattery", configuration.minimumBatteryLevel),
+                        isOn: $configuration.lowBatteryProtectionEnabled
+                    )
+                    .toggleStyle(.switch)
+                    if configuration.lowBatteryProtectionEnabled {
+                        SettingsSlider(
+                            value: batteryThresholdBinding,
+                            in: 10...50,
+                            step: 1,
+                            label: model.t("awakeEndSessionBelowBattery", configuration.minimumBatteryLevel)
+                        )
+                        Toggle(model.t("awakeWarnBeforeBatteryEnd"), isOn: $configuration.warnBeforeBatteryTermination)
+                            .toggleStyle(.switch)
+                    }
+
+                    sectionLabel(model.t("awakePowerAdapterSection"))
+                    Toggle(model.t("awakeIgnoreBatteryOnPower"), isOn: $configuration.ignoreBatteryLevelOnExternalPower)
+                        .toggleStyle(.switch)
+                    Toggle(model.t("awakeRestartOnPowerReconnect"), isOn: $configuration.restartOnPowerReconnect)
+                        .toggleStyle(.switch)
+                }
+                .padding(24)
+            }
+
+            Divider()
+            HStack(spacing: 12) {
+                Spacer()
+                Button(model.t("cancel")) { dismiss() }
+                Button(existingProfile == nil ? model.t("save") : model.t("awakeProfileSaveChanges"), action: save)
+                    .macPilotProminentButtonStyle()
+                    .disabled(trimmedName.isEmpty)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+        }
+        .frame(minWidth: 520, idealWidth: 560, minHeight: 580, idealHeight: 660)
+    }
+
+    private var trimmedName: String {
+        AwakeSessionProfile.normalizedName(name)
+    }
+
+    private var durationPreset: AwakeProfileDurationPreset {
+        AwakeProfileDurationPreset.matching(minutes: configuration.durationMinutes)
+    }
+
+    private var durationPresetBinding: Binding<AwakeProfileDurationPreset> {
+        Binding(
+            get: { durationPreset },
+            set: { preset in
+                if let minutes = preset.minutes {
+                    configuration.durationMinutes = minutes
+                }
+            }
+        )
+    }
+
+    private var customDurationMinutesBinding: Binding<Int> {
+        Binding(
+            get: { max(1, configuration.durationMinutes) },
+            set: { configuration.durationMinutes = max(1, $0) }
+        )
+    }
+
+    private var displaySleepAllowedBinding: Binding<Bool> {
+        Binding(
+            get: { !configuration.preventDisplaySleep },
+            set: { configuration.preventDisplaySleep = !$0 }
+        )
+    }
+
+    private var screenSaverIdleBinding: Binding<Double> {
+        Binding(
+            get: { Double(configuration.screenSaverIdleMinutes) },
+            set: { configuration.screenSaverIdleMinutes = Int($0.rounded()) }
+        )
+    }
+
+    private var batteryThresholdBinding: Binding<Double> {
+        Binding(
+            get: { Double(configuration.minimumBatteryLevel) },
+            set: { configuration.minimumBatteryLevel = Int($0.rounded()) }
+        )
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .padding(.top, 2)
+    }
+
+    private func save() {
+        guard !trimmedName.isEmpty else { return }
+        if var profile = existingProfile {
+            profile.name = trimmedName
+            profile.configuration = configuration
+            profiles.update(profile)
+        } else {
+            profiles.create(name: trimmedName, configuration: configuration)
+        }
         dismiss()
     }
 }
@@ -687,6 +1267,7 @@ struct AwakeMenuView: View {
     @EnvironmentObject private var model: MacPilotModel
     @ObservedObject var awake: AwakeSessionManager
     @ObservedObject var triggerEngine: AwakeTriggerEngine
+    @ObservedObject var profiles: AwakeProfileStore
     let openSettings: () -> Void
 
     var body: some View {
@@ -704,6 +1285,18 @@ struct AwakeMenuView: View {
                             stopAwakeSession(session, awake: awake, triggerEngine: triggerEngine)
                         } label: {
                             Text(sessionMenuDescription(session, number: index + 1))
+                        }
+                    }
+                }
+            }
+
+            if !profiles.profiles.isEmpty {
+                Menu(model.t("awakeQuickLaunch")) {
+                    ForEach(profiles.profiles) { profile in
+                        Button {
+                            launchProfileFromMenu(profile)
+                        } label: {
+                            Label(profile.name, systemImage: "flame.fill")
                         }
                     }
                 }
@@ -728,20 +1321,61 @@ struct AwakeMenuView: View {
                 Button(model.t("awakeUnlimited")) { _ = awake.startManualSession() }
             }
 
+            if awake.hasInteractiveSession {
+                Button(model.t("awakeStop"), action: awake.endAllInteractiveSessions)
+            }
+
             Button(model.t("awakeOpenSettings"), action: openSettings)
         }
     }
 
     private var statusText: String {
         if awake.safetyProtectionActive { return model.t("awakeSafetyActive") }
-        if awake.activeSessionCount == 1 { return model.t("awakeActive") }
+        if awake.activeSessionCount == 1, let only = awake.activeSessions.first {
+            // 方案会话直接显示方案名，让用户知道现在跑的是哪套配置。
+            if case .profile(let name) = only.source { return name }
+            return model.t("awakeActive")
+        }
         return model.t("awakeMultipleSessions", awake.activeSessionCount)
     }
 
     private var expiryText: String? {
-        guard let date = awake.activeSessions.compactMap(\.expectedEndAt).min() else { return nil }
-        let formattedDate = date.formatted(.dateTime.month(.abbreviated).day().hour().minute().locale(model.language.locale))
-        return "\(model.t("awakeEndsAt")) \(formattedDate)"
+        guard let end = awake.activeSessions.compactMap(\.expectedEndAt).min() else { return nil }
+        let remaining = end.timeIntervalSince(Date())
+        guard remaining > 0 else {
+            let formattedDate = end.formatted(.dateTime.month(.abbreviated).day().hour().minute().locale(model.language.locale))
+            return "\(model.t("awakeEndsAt")) \(formattedDate)"
+        }
+        let remainingText = Duration.seconds(remaining)
+            .formatted(.units(allowed: [.hours, .minutes], width: .wide, maximumUnitCount: 2))
+        return model.t("awakeRemaining", remainingText)
+    }
+
+    /// 菜单里点击方案：空闲时直接启动；已有用户主动开始的 Session 时，
+    /// 用系统弹窗确认切换（菜单关闭后弹出）。
+    private func launchProfileFromMenu(_ profile: AwakeSessionProfile) {
+        guard !awake.hasInteractiveSession else {
+            confirmProfileSwitchFromMenu(profile)
+            return
+        }
+        profiles.launch(profile.id, in: awake)
+    }
+
+    private func confirmProfileSwitchFromMenu(_ profile: AwakeSessionProfile) {
+        let separator = model.language.locale.language.languageCode?.identifier == "zh" ? "、" : ", "
+        let runningNames = awake.activeInteractiveSessions.map { session in
+            if case .profile(let name) = session.source { return name }
+            return model.t("awakeManualSource")
+        }.joined(separator: separator)
+        let alert = NSAlert()
+        alert.messageText = model.t("awakeProfileSwitchTitle")
+        alert.informativeText = model.t("awakeProfileSwitchMessage", runningNames, profile.name)
+        alert.addButton(withTitle: model.t("awakeProfileSwitchConfirm"))
+        alert.addButton(withTitle: model.t("cancel"))
+        alert.alertStyle = .warning
+        if alert.runModal() == .alertFirstButtonReturn {
+            profiles.launch(profile.id, in: awake, replacingActiveSessions: true)
+        }
     }
 
     private func sessionMenuDescription(_ session: AwakeSession, number: Int) -> String {
@@ -794,6 +1428,8 @@ private func awakeSessionSourceDescription(
         return url.lastPathComponent
     case .automation(let identifier):
         return identifier
+    case .profile(let name):
+        return name
     }
 }
 
