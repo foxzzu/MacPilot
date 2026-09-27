@@ -63,9 +63,13 @@ final class RemoteTrackpadModel: ObservableObject {
 
     /// Events waiting for the next flush. Moves merge; clicks wait in order.
     private var pending: [InputEvent] = []
+    private var pendingTouchAt: TimeInterval?
+    private var hapticAfterSend = false
     private var flushTask: Task<Void, Never>?
     private var beginTask: Task<Void, Never>?
     private var keyboardRequestTask: Task<Void, Never>?
+    private var keyboardRecheckTask: Task<Void, Never>?
+    private var keyboardRecheckPending = false
     private var textInputTask: Task<Void, Never>?
     private var textInputEpoch = 0
 
@@ -75,13 +79,16 @@ final class RemoteTrackpadModel: ObservableObject {
     /// freshness beats completeness: keep the newest move, keep every click.
     private static let maximumPendingEvents = 24
 
-    /// End-to-end diagnostics, sampled every couple of seconds — never per
-    /// event, the flush loop is too hot for that.
+    /// Local input-stage diagnostics, sampled every couple of seconds — never
+    /// per event, the flush loop is too hot for that.
     private let logger = Logger(subsystem: "com.misswell.macpilot.remote", category: "Trackpad")
     private var batchesSent = 0
     private var eventsSent = 0
     private var lastSendLogAt = Date()
     private var didLogFirstBatch = false
+    private var touchToSendSamples = 0
+    private var touchToSendTotalMs = 0.0
+    private var touchToSendMaxMs = 0.0
 
     init() {
         let stored = store
@@ -119,10 +126,14 @@ final class RemoteTrackpadModel: ObservableObject {
         beginTask?.cancel()
         beginTask = nil
         pending.removeAll()
+        pendingTouchAt = nil
         inertia.stop()
         keyboardActive = false
         keyboardRequestTask?.cancel()
         keyboardRequestTask = nil
+        keyboardRecheckTask?.cancel()
+        keyboardRecheckTask = nil
+        keyboardRecheckPending = false
         let appModel = self.appModel
         let pendingText = textInputTask
         Task {
@@ -168,6 +179,8 @@ final class RemoteTrackpadModel: ObservableObject {
             while let self, !Task.isCancelled, self.phase.isActiveLike {
                 self.tickGestures()
                 self.flushIfNeeded()
+                self.recheckKeyboardAfterClickIfNeeded()
+                self.emitHapticIfNeeded()
                 try? await Task.sleep(for: .seconds(Self.flushInterval))
             }
         }
@@ -197,7 +210,11 @@ final class RemoteTrackpadModel: ObservableObject {
         textInputEpoch += 1
         keyboardRequestTask?.cancel()
         keyboardRequestTask = nil
+        keyboardRecheckTask?.cancel()
+        keyboardRecheckTask = nil
+        keyboardRecheckPending = false
         pending.removeAll()
+        pendingTouchAt = nil
         inertia.stop()
         engine.reset()
         velocity.reset()
@@ -227,10 +244,23 @@ final class RemoteTrackpadModel: ObservableObject {
         case .cancelled:
             outputs = engine.handleCancelled(remaining: touchCount)
         }
+        if !outputs.isEmpty, !samples.isEmpty {
+            pendingTouchAt = min(pendingTouchAt ?? time, time)
+        }
         apply(outputs)
         // Touch callbacks already contain the coalesced samples for this display
         // frame. Send them now instead of waiting for the next gesture/inertia tick.
         flushIfNeeded()
+        pendingTouchAt = nil
+        recheckKeyboardAfterClickIfNeeded()
+        emitHapticIfNeeded()
+    }
+
+    private func emitHapticIfNeeded() {
+        if hapticAfterSend {
+            hapticAfterSend = false
+            Haptics.impact()
+        }
     }
 
     private func touchTime(of samples: [TouchSample]) -> TimeInterval {
@@ -281,7 +311,10 @@ final class RemoteTrackpadModel: ObservableObject {
 
             case let .click(button, action):
                 append(.click(button: button, action: action))
-                if action == .down { Haptics.impact() }
+                if action == .down { hapticAfterSend = true }
+                if action == .up, keyboardActive {
+                    keyboardRecheckPending = true
+                }
             case .requestKeyboard:
                 requestKeyboard()
             }
@@ -308,6 +341,27 @@ final class RemoteTrackpadModel: ObservableObject {
                 self.append(.click(button: .left, action: .up))
                 self.flushIfNeeded()
             }
+        }
+    }
+
+    private func recheckKeyboardAfterClickIfNeeded() {
+        guard keyboardRecheckPending, keyboardRecheckTask == nil,
+              keyboardActive, let appModel else { return }
+        keyboardRecheckPending = false
+        keyboardRecheckTask = Task { [weak self] in
+            // The click batch was already sent. Finish any committed text
+            // before replacing the Mac's pinned editable target.
+            await self?.textInputTask?.value
+            guard let self else { return }
+            guard !Task.isCancelled, self.keyboardActive else {
+                self.keyboardRecheckTask = nil
+                return
+            }
+            let stillEditable = await appModel.beginTextInput()
+            self.keyboardRecheckTask = nil
+            guard !Task.isCancelled, self.keyboardActive else { return }
+            if !stillEditable { self.dismissKeyboard() }
+            if self.keyboardRecheckPending { self.recheckKeyboardAfterClickIfNeeded() }
         }
     }
 
@@ -359,6 +413,9 @@ final class RemoteTrackpadModel: ObservableObject {
     func dismissKeyboard() {
         guard keyboardActive else { return }
         keyboardActive = false
+        keyboardRecheckPending = false
+        keyboardRecheckTask?.cancel()
+        keyboardRecheckTask = nil
         guard let appModel else { return }
         let previous = textInputTask
         textInputTask = Task {
@@ -429,11 +486,23 @@ final class RemoteTrackpadModel: ObservableObject {
             // No link, no queue: the state observer already flipped the page
             // into reconnecting, and stale deltas would only jerk the cursor.
             pending.removeAll()
+            pendingTouchAt = nil
             return
         }
         coalescePending()
         let batch = InputEncoder.encode(pending)
         pending.removeAll()
+        let oldestTouchAt = pendingTouchAt
+        pendingTouchAt = nil
+        // Send before diagnostics: even a sampled log can stall the main
+        // actor, and the touch-to-send measure should include encoding.
+        appModel.sendRealtimeInput(batch)
+        if let oldestTouchAt {
+            let milliseconds = max(0, (ProcessInfo.processInfo.systemUptime - oldestTouchAt) * 1_000)
+            touchToSendSamples += 1
+            touchToSendTotalMs += milliseconds
+            touchToSendMaxMs = max(touchToSendMaxMs, milliseconds)
+        }
         batchesSent += 1
         eventsSent += batch.events.count
         if !didLogFirstBatch {
@@ -442,12 +511,15 @@ final class RemoteTrackpadModel: ObservableObject {
         }
         let sinceLog = Date().timeIntervalSince(lastSendLogAt)
         if sinceLog >= 2 {
-            logger.info("input sent batches=\(self.batchesSent) events/s=\(Int(Double(self.eventsSent) / sinceLog))")
+            let average = touchToSendSamples == 0 ? 0 : touchToSendTotalMs / Double(touchToSendSamples)
+            logger.info("input sent batches=\(self.batchesSent) events/s=\(Int(Double(self.eventsSent) / sinceLog)) touchToSendAvgMs=\(average) touchToSendMaxMs=\(self.touchToSendMaxMs)")
             batchesSent = 0
             eventsSent = 0
+            touchToSendSamples = 0
+            touchToSendTotalMs = 0
+            touchToSendMaxMs = 0
             lastSendLogAt = Date()
         }
-        appModel.sendRealtimeInput(batch)
     }
 
     private func coalescePending() {

@@ -151,6 +151,10 @@ Dismissal and leaving the trackpad send `endTextInput`; disconnect also clears
 the Mac's per-connection target. This feature needs the Mac's Accessibility
 grant. Custom controls that do not expose a standard editable Accessibility
 role or do not accept Unicode keyboard events may not support remote typing.
+While the phone keyboard is open, a trackpad click rechecks the pointer's Mac
+Accessibility target after sending the click. Clicking ordinary content closes
+the phone keyboard; clicking another editable field keeps it open and binds
+typing to the new field.
 
 ### Injection paths: virtual HID device vs CGEvent
 
@@ -295,6 +299,36 @@ the only way to tell "it picked the slower link" from "it had no choice".
   command execution latencies are measured on the iPhone and shown under
   **Settings → Connection performance**. The Mac logs
   `handshake complete event=... latency=...ms`.
+
+### Trackpad latency measurements
+
+The trackpad sends coalesced UIKit touch samples immediately after each touch
+callback; the 120 Hz task keeps inertial scrolling running between callbacks.
+Both TCP endpoints disable Nagle, and the existing connection race includes
+peer-to-peer Wi-Fi when Bonjour can resolve it. The input packets remain binary
+and use the authenticated realtime frame; command traffic stays on its existing
+channel. BLE L2CAP stream diagnostics aggregate byte counts every two seconds
+instead of dispatching one main-thread log update per read or write. No new
+pairing or transport path is required.
+
+The iPhone's `Trackpad` log reports `touchToSendAvgMs` and
+`touchToSendMaxMs` over two-second windows. The Mac's `RemoteInput` log reports
+`receiveToInjectAvgMs`, `receiveToInjectMaxMs`, and `injectAvgMs` over the same
+sampling interval. The existing phone connection performance view reports RTT
+and the selected interface. These measurements are *segments*, not a claimed
+touch-to-visible-cursor total: phone and Mac monotonic clocks have different
+origins, and neither event posting nor a successful HID report proves the
+display has painted the new cursor. Measure the actual visible response with
+an external high-speed camera when comparing against a millisecond target.
+
+For regression checks, move continuously for 30 minutes, drag across windows,
+alternate rapid clicks with motion, switch Wi-Fi paths, and background/restore
+the phone. Watch the sampled maximum as well as the average, because a short
+main-thread stall can be more noticeable than the steady-state cost. The input
+path deliberately avoids exponential cursor smoothing: a heavy smoothing
+factor would reduce jitter at the cost of visible lag. macOS supplies pointer
+acceleration on the virtual HID path; the phone's velocity curve is used only
+for the CGEvent fallback. Click feedback runs after the outgoing batch is sent.
 
 ## Mac setup
 

@@ -37,13 +37,17 @@ final class RemoteInputCoordinator {
     private var virtualButtonBits: UInt8 = 0
     /// Logged once per session, not per dropped scroll event.
     private var didWarnScrollWithoutAccessibility = false
-    /// End-to-end diagnostics: receipt counters, sampled every couple of
-    /// seconds instead of per event — 120 Hz logging would be its own fault.
+    /// Local receive/injection diagnostics, sampled every couple of seconds
+    /// instead of per event — 120 Hz logging would be its own fault.
     private let logger = Logger(subsystem: "com.misswell.macpilot.remote", category: "RemoteInput")
     private var batchesReceived = 0
     private var eventsInjected = 0
     private var lastRateLogAt = Date()
     private var didLogFirstBatch = false
+    private var timingSamples = 0
+    private var receiveToInjectTotalMs = 0.0
+    private var receiveToInjectMaxMs = 0.0
+    private var injectTotalMs = 0.0
 
     init(
         mouse: MouseInjecting = MouseInjector(),
@@ -80,6 +84,10 @@ final class RemoteInputCoordinator {
             eventsInjected = 0
             lastRateLogAt = Date()
             didLogFirstBatch = false
+            timingSamples = 0
+            receiveToInjectTotalMs = 0
+            receiveToInjectMaxMs = 0
+            injectTotalMs = 0
         }
         return .armed
     }
@@ -110,8 +118,25 @@ final class RemoteInputCoordinator {
     /// Applies one decoded batch. Motion that arrives without a session is
     /// discarded: an armed channel is what makes the trackpad a feature
     /// instead of a hole.
-    func handle(_ batch: RemoteInputBatch, connectionID: UUID) {
+    func handle(_ batch: RemoteInputBatch, connectionID: UUID, receivedAt: TimeInterval? = nil) {
         guard armedConnections.contains(connectionID) else { return }
+        let injectionStartedAt = ProcessInfo.processInfo.systemUptime
+        for event in batch.events {
+            switch event {
+            case let .move(dx, dy, buttons):
+                moveCursor(dx: dx, dy: dy, buttons: buttons)
+            case let .click(button, action):
+                click(button: button, action: action)
+            case let .scroll(dx, dy):
+                handleScroll(dx: dx, dy: dy)
+            }
+        }
+        let finishedAt = ProcessInfo.processInfo.systemUptime
+        let elapsed = max(0, (finishedAt - (receivedAt ?? injectionStartedAt)) * 1_000)
+        timingSamples += 1
+        receiveToInjectTotalMs += elapsed
+        receiveToInjectMaxMs = max(receiveToInjectMaxMs, elapsed)
+        injectTotalMs += max(0, (finishedAt - injectionStartedAt) * 1_000)
         batchesReceived += 1
         eventsInjected += batch.events.count
         if !didLogFirstBatch {
@@ -128,20 +153,16 @@ final class RemoteInputCoordinator {
         let sinceLog = Date().timeIntervalSince(lastRateLogAt)
         if sinceLog >= 2 {
             let rate = Double(eventsInjected) / sinceLog
-            logger.info("realtime input batches=\(self.batchesReceived) events/s=\(Int(rate))")
+            let receiveAverage = timingSamples == 0 ? 0 : receiveToInjectTotalMs / Double(timingSamples)
+            let injectAverage = timingSamples == 0 ? 0 : injectTotalMs / Double(timingSamples)
+            logger.info("realtime input batches=\(self.batchesReceived) events/s=\(Int(rate)) receiveToInjectAvgMs=\(receiveAverage) receiveToInjectMaxMs=\(self.receiveToInjectMaxMs) injectAvgMs=\(injectAverage)")
             batchesReceived = 0
             eventsInjected = 0
+            timingSamples = 0
+            receiveToInjectTotalMs = 0
+            receiveToInjectMaxMs = 0
+            injectTotalMs = 0
             lastRateLogAt = Date()
-        }
-        for event in batch.events {
-            switch event {
-            case let .move(dx, dy, buttons):
-                moveCursor(dx: dx, dy: dy, buttons: buttons)
-            case let .click(button, action):
-                click(button: button, action: action)
-            case let .scroll(dx, dy):
-                handleScroll(dx: dx, dy: dy)
-            }
         }
     }
 

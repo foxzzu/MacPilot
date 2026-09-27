@@ -114,6 +114,9 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
     private var reportedReady = false
     private var receivedBytes = 0
     private var sentBytes = 0
+    private var lastThroughputAt = 0.0
+    private var lastReportedReceivedBytes = 0
+    private var lastReportedSentBytes = 0
 
     /// How often a queued write is retried when no stream event arrives.
     /// Only a fallback link pays this, and only while it is up.
@@ -169,6 +172,7 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
 
     private func run() {
         guard !isStopped else { return }
+        lastThroughputAt = ProcessInfo.processInfo.systemUptime
         lock.lock()
         pumpRunLoop = CFRunLoopGetCurrent()
         lock.unlock()
@@ -244,8 +248,8 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
             let count = input.read(&buffer, maxLength: buffer.count)
             if count > 0 {
                 receivedBytes += count
-                onDiagnostic?("L2CAP read=\(count) rx=\(receivedBytes)")
                 onChunk?(Data(buffer[0..<count]))
+                reportThroughputIfDue()
             } else if count < 0 {
                 finish("read=-1; \(snapshot())")
                 return
@@ -269,8 +273,8 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
             }
             if written > 0 {
                 sentBytes += written
-                onDiagnostic?("L2CAP wrote=\(written) tx=\(sentBytes)")
                 consumePending(written, of: next)
+                reportThroughputIfDue()
             } else if written < 0 {
                 finish("write=-1; \(snapshot())")
                 return
@@ -288,6 +292,20 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
         guard !alreadyStopped else { return }
         onDiagnostic?("L2CAP ended: \(reason ?? "EOF") rx=\(receivedBytes) tx=\(sentBytes)")
         onClosed?(reason)
+    }
+
+    /// Per-packet diagnostics would enqueue one main-actor log update for every
+    /// 120 Hz input frame, competing with the input callbacks themselves.
+    /// This runs only on the stream pump thread and publishes aggregate counts.
+    private func reportThroughputIfDue() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastThroughputAt >= 2 else { return }
+        let received = receivedBytes - lastReportedReceivedBytes
+        let sent = sentBytes - lastReportedSentBytes
+        lastThroughputAt = now
+        lastReportedReceivedBytes = receivedBytes
+        lastReportedSentBytes = sentBytes
+        onDiagnostic?("L2CAP throughput rx=\(received)B tx=\(sent)B / 2s")
     }
 
     private func describe(_ error: Error) -> String {

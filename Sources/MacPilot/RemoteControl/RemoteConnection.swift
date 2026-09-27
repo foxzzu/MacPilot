@@ -58,7 +58,11 @@ final class RemoteConnection: Identifiable {
 
     private var sentSequence: UInt64 = 0
     private var handshakeStartedAt: Date?
-    private var pendingFrames: [Data] = []
+    private struct PendingFrame {
+        let data: Data
+        let receivedAt: TimeInterval
+    }
+    private var pendingFrames: [PendingFrame] = []
     private var isDraining = false
 
     /// Last time any byte arrived from this client. Outbound traffic does not
@@ -204,7 +208,11 @@ final class RemoteConnection: Identifiable {
     /// Commands must run one at a time and in arrival order.
     private func enqueue(_ frames: [Data]) {
         guard !frames.isEmpty else { return }
-        pendingFrames.append(contentsOf: frames)
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        pendingFrames.reserveCapacity(pendingFrames.count + frames.count)
+        for frame in frames {
+            pendingFrames.append(PendingFrame(data: frame, receivedAt: receivedAt))
+        }
         pendingBytes += frames.reduce(0) { $0 + $1.count }
         if pendingFrames.count > Self.maximumPendingFrames || pendingBytes > Self.maximumPendingBytes {
             pendingFrames.removeAll(keepingCapacity: false)
@@ -218,17 +226,17 @@ final class RemoteConnection: Identifiable {
             guard let self else { return }
             while !self.pendingFrames.isEmpty, !self.isClosed {
                 let frame = self.pendingFrames.removeFirst()
-                self.pendingBytes = max(0, self.pendingBytes - frame.count)
-                await self.handleFrame(frame)
+                self.pendingBytes = max(0, self.pendingBytes - frame.data.count)
+                await self.handleFrame(frame.data, receivedAt: frame.receivedAt)
             }
             self.isDraining = false
         }
     }
 
-    private func handleFrame(_ payload: Data) async {
+    private func handleFrame(_ payload: Data, receivedAt: TimeInterval) async {
         do {
             if let key = sessionKey {
-                try await handleSecure(payload, key: key)
+                try await handleSecure(payload, key: key, receivedAt: receivedAt)
             } else {
                 try await handlePlaintext(payload)
             }
@@ -389,10 +397,10 @@ final class RemoteConnection: Identifiable {
 
     // MARK: - Secure traffic
 
-    private func handleSecure(_ payload: Data, key: RemoteSessionKey) async throws {
+    private func handleSecure(_ payload: Data, key: RemoteSessionKey, receivedAt: TimeInterval) async throws {
         guard let tag = payload.first else { throw RemoteProtocolError.malformedFrame }
         if tag == RemoteFrameCodec.realtimeInputTag {
-            try handleRealtimeInput(payload, key: key)
+            try handleRealtimeInput(payload, key: key, receivedAt: receivedAt)
             return
         }
         try await handleSecureRequest(payload, key: key)
@@ -402,7 +410,7 @@ final class RemoteConnection: Identifiable {
     /// batch gets no response, and a stale or undecodable one is dropped rather
     /// than tearing the session down — pointer motion is exactly the traffic
     /// that is safe to lose.
-    private func handleRealtimeInput(_ payload: Data, key: RemoteSessionKey) throws {
+    private func handleRealtimeInput(_ payload: Data, key: RemoteSessionKey, receivedAt: TimeInterval) throws {
         let (sequence, batch) = try RemoteFrameCodec.decodeRealtimeInput(payload, key: key)
         do {
             try replayGuard.accept(sequence: sequence, timestampMilliseconds: batch.timestampMilliseconds)
@@ -411,7 +419,7 @@ final class RemoteConnection: Identifiable {
             return
         }
         guard isAuthenticated, isRealtimeInputArmed, let host else { return }
-        host.inputCoordinator.handle(batch, connectionID: id)
+        host.inputCoordinator.handle(batch, connectionID: id, receivedAt: receivedAt)
     }
 
     private func handleSecureRequest(_ payload: Data, key: RemoteSessionKey) async throws {

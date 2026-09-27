@@ -181,6 +181,26 @@ struct L2CAPStreamTransportTests {
     }
 
     @MainActor
+    @Test("high-rate traffic does not produce a diagnostic for every read and write")
+    func trafficDiagnosticsAreSampled() async {
+        let (input, output) = Self.makeLoopbackStreams(bufferSize: 16)
+        let transport = L2CAPStreamTransport(input: input, output: output)
+        let recorder = Recorder()
+        var diagnostics: [String] = []
+        transport.onReceive = { recorder.chunks.append($0) }
+        transport.onDiagnostic = { diagnostics.append($0) }
+        transport.start()
+        let payload = Self.payload(512)
+        transport.send(payload) { _ in }
+
+        let arrived = await Self.waitUntil { recorder.concatenated.count >= payload.count }
+        #expect(arrived)
+        #expect(recorder.chunks.count > 1)
+        #expect(!diagnostics.contains { $0.contains("L2CAP read=") || $0.contains("L2CAP wrote=") })
+        transport.cancel()
+    }
+
+    @MainActor
     @Test("a queued write does not wait for the fallback retry timer")
     func queuedWriteWakesPump() async {
         let (input, output) = Self.makeLoopbackStreams(bufferSize: 1024)
