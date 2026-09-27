@@ -51,4 +51,8 @@ public enum RemoteCapability: String, Codable, Sendable, CaseIterable, Equatable
     case unlock
     /// The Mac accepts binary realtime input batches (the trackpad channel).
     case realtimeInput
+    /// The Mac reads graded pressure from kind-4 press events and applies it
+    /// to the injected CGEvents. Senders without this advertisement fall back
+    /// to plain clicks, which keeps old Macs working untouched.
+    case inputPressure
 }

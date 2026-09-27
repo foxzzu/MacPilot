@@ -127,6 +127,8 @@ final class RemoteInputCoordinator {
                 moveCursor(dx: dx, dy: dy, buttons: buttons)
             case let .click(button, action):
                 click(button: button, action: action)
+            case let .press(button, action, pressure):
+                press(button: button, action: action, pressure: pressure)
             case let .scroll(dx, dy):
                 handleScroll(dx: dx, dy: dy)
             }
@@ -145,6 +147,7 @@ final class RemoteInputCoordinator {
                 switch event {
                 case let .move(dx, dy, buttons): return "move(dx:\(dx), dy:\(dy), buttons:\(buttons.rawValue))"
                 case let .click(button, action): return "click(\(button.rawValue), \(action.rawValue))"
+                case let .press(button, action, pressure): return "press(\(button.rawValue), \(action.rawValue), \(pressure))"
                 case let .scroll(dx, dy): return "scroll(dx:\(dx), dy:\(dy))"
                 }
             }.joined(separator: "; ")
@@ -179,17 +182,32 @@ final class RemoteInputCoordinator {
 
     private func click(button: RemoteInputButton, action: RemoteInputAction) {
         if virtualDevice.isAvailable {
-            let mask: UInt8 = button == .left ? 0b001 : 0b010
-            if action == .down {
-                virtualButtonBits |= mask
-            } else {
-                virtualButtonBits &= ~mask
-            }
-            virtualDevice.handle(dx: 0, dy: 0, buttons: virtualButtonBits)
-            recoverFromVirtualFailureIfNeeded()
+            applyButton(button: button, action: action)
         } else {
             mouse.click(button: button, action: action)
         }
+    }
+
+    /// Simulated pressure rides the same button state machine as a click. The
+    /// virtual HID report has no force field, so there the grade is dropped
+    /// and only the CGEvent path carries it to pressure-aware apps.
+    private func press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double) {
+        if virtualDevice.isAvailable {
+            applyButton(button: button, action: action)
+        } else {
+            mouse.press(button: button, action: action, pressure: pressure)
+        }
+    }
+
+    private func applyButton(button: RemoteInputButton, action: RemoteInputAction) {
+        let mask: UInt8 = button == .left ? 0b001 : 0b010
+        if action == .down {
+            virtualButtonBits |= mask
+        } else {
+            virtualButtonBits &= ~mask
+        }
+        virtualDevice.handle(dx: 0, dy: 0, buttons: virtualButtonBits)
+        recoverFromVirtualFailureIfNeeded()
     }
 
     private func handleScroll(dx: Double, dy: Double) {

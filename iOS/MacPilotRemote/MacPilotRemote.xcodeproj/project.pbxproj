@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		077A2BDE51FBE26CE12D7627 /* PressureIntentEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E51007DA7A300933D953C5 /* PressureIntentEngine.swift */; };
 		094E002356093BE6F77D140D /* RemoteKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE3A75BF934E7F7884ACA12 /* RemoteKeychain.swift */; };
 		10AD0F90E657210C6CFE9F26 /* RemoteText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD7E33EB369C3302C36BADA /* RemoteText.swift */; };
 		1970021C7F7E0FC5464C4433 /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CEAD84B28A1735C296AEBF8 /* DevicesView.swift */; };
@@ -78,6 +79,7 @@
 		996A9B575EF823EFF98F1EB8 /* TrackpadState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadState.swift; sourceTree = "<group>"; };
 		A11CCEAC5B50B59CC42724C3 /* VelocityCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VelocityCalculator.swift; sourceTree = "<group>"; };
 		A631B526163D86A62B57FE38 /* MacPilotRemoteProtocol */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MacPilotRemoteProtocol; path = ../../Packages/MacPilotRemoteProtocol; sourceTree = SOURCE_ROOT; };
+		B8E51007DA7A300933D953C5 /* PressureIntentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressureIntentEngine.swift; sourceTree = "<group>"; };
 		BE5AAC04F84819EBB0BDBC6B /* AccelerationCurve.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccelerationCurve.swift; sourceTree = "<group>"; };
 		C1BF7246E89AE5367E76D9EF /* TrackpadOrientationCompass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadOrientationCompass.swift; sourceTree = "<group>"; };
 		C5B2D649254FA8EE4ED7FA7E /* InputEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputEvent.swift; sourceTree = "<group>"; };
@@ -160,6 +162,7 @@
 				BE5AAC04F84819EBB0BDBC6B /* AccelerationCurve.swift */,
 				4D1267A79F7F5D73F8C52E77 /* GestureEngine.swift */,
 				99645C5EFB4EBEF5B3AD89F0 /* InertiaProcessor.swift */,
+				B8E51007DA7A300933D953C5 /* PressureIntentEngine.swift */,
 				D152E96DBE715090384BAA76 /* TouchProcessor.swift */,
 				A11CCEAC5B50B59CC42724C3 /* VelocityCalculator.swift */,
 			);
@@ -412,6 +415,7 @@
 				1CAEA4510A03902701764DC2 /* MacPilotRemoteApp.swift in Sources */,
 				36BB935C02EC8519CE7DAFB1 /* PairedMacStore.swift in Sources */,
 				1FDC655EF74A5B0A9E892D40 /* PairingSheetView.swift in Sources */,
+				077A2BDE51FBE26CE12D7627 /* PressureIntentEngine.swift in Sources */,
 				2A4D3DB2192AC62F75C6B89D /* RemoteAppModel.swift in Sources */,
 				7F9A392EE7B644AB9A987F7A /* RemoteBLEPeripheral.swift in Sources */,
 				8ABE53FBAA8C5E88D864E561 /* RemoteConnectionManager.swift in Sources */,
@@ -516,7 +520,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -537,7 +541,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

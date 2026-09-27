@@ -34,6 +34,23 @@ struct TrackpadContainerView: View {
                         )
                     }
                     .allowsHitTesting(model.phase.isActiveLike)
+                    .overlay(alignment: .topTrailing) {
+                        if let debug = model.pressureDebug {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Pressure: ON")
+                                Text("Radius: \(debug.radius, specifier: "%.1f")")
+                                Text("Score: \(debug.score, specifier: "%.2f")")
+                                Text("State: \(debug.state)")
+                            }
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .padding(8)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .padding(.trailing, 10)
+                            .padding(.top, 6)
+                            .allowsHitTesting(false)
+                        }
+                    }
                     .accessibilityLabel(appModel.text("trackpadTitle"))
             }
             .padding(.top, 6)

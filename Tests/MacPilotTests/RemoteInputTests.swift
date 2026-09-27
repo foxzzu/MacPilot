@@ -14,9 +14,16 @@ final class FakeMouseInjector: MouseInjecting {
         let action: RemoteInputAction
     }
 
+    struct Press: Equatable {
+        let button: RemoteInputButton
+        let action: RemoteInputAction
+        let pressure: Double
+    }
+
     var canPostEvents: Bool
     private(set) var moves: [(dx: Double, dy: Double, buttons: RemoteInputButtons)] = []
     private(set) var clicks: [Click] = []
+    private(set) var presses: [Press] = []
 
     init(canPostEvents: Bool = true) {
         self.canPostEvents = canPostEvents
@@ -28,6 +35,10 @@ final class FakeMouseInjector: MouseInjecting {
 
     func click(button: RemoteInputButton, action: RemoteInputAction) {
         clicks.append(Click(button: button, action: action))
+    }
+
+    func press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double) {
+        presses.append(Press(button: button, action: action, pressure: pressure))
     }
 }
 
@@ -123,6 +134,27 @@ struct RemoteInputCoordinatorTests {
         #expect(mouse.clicks == [.init(button: .left, action: .down), .init(button: .left, action: .up)])
         #expect(scroll.scrolls.count == 1)
         #expect(scroll.scrolls[0].dy == 6)
+    }
+
+    @Test("graded presses ride the CGEvent path with their pressure")
+    func pressCarriesPressure() {
+        let (coordinator, mouse, _) = makeCoordinator()
+        #expect(coordinator.beginSession(connectionID: connectionID) == .armed)
+        coordinator.handle(
+            RemoteInputBatch(
+                timestampMilliseconds: 1,
+                events: [
+                    .press(button: .left, action: .down, pressure: 0.62),
+                    .press(button: .left, action: .up, pressure: 0.62),
+                ]
+            ),
+            connectionID: connectionID
+        )
+        #expect(mouse.presses == [
+            .init(button: .left, action: .down, pressure: 0.62),
+            .init(button: .left, action: .up, pressure: 0.62),
+        ])
+        #expect(mouse.clicks.isEmpty)
     }
 
     @Test("ending the session stops injection")

@@ -11,6 +11,12 @@ public enum RemoteInputEvent: Equatable, Sendable {
     /// `buttons` carries the buttons held while moving (left = drag).
     case move(dx: Double, dy: Double, buttons: RemoteInputButtons)
     case click(button: RemoteInputButton, action: RemoteInputAction)
+    /// A click that carries simulated pressure (0…1), the trackpad module's
+    /// answer to Mac trackpad presses: touch area and hold duration on the
+    /// phone become a graded pressure value here. Receivers without pressure
+    /// support simply never see this event — senders gate it on the
+    /// `.inputPressure` capability.
+    case press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double)
     /// Two-finger scrolling in finger pixels, natural direction: the values
     /// follow the fingers, so content follows the fingers the way macOS does.
     case scroll(dx: Double, dy: Double)
@@ -62,6 +68,7 @@ public struct RemoteInputBatch: Sendable, Equatable {
 ///          u64 timestamp milliseconds
 /// events:  move:   u8 kind=1 | i16 dx | i16 dy | u8 buttons
 ///          click:  u8 kind=2 | u8 button | u8 action
+///          press:  u8 kind=4 | u8 button | u8 action | u8 pressure (0…255 → 0…1)
 ///          scroll: u8 kind=3 | i16 dx | i16 dy
 /// ```
 ///
@@ -94,6 +101,11 @@ public enum RemoteInputBatchCodec {
                 data.append(2)
                 data.append(button.rawValue)
                 data.append(action.rawValue)
+            case let .press(button, action, pressure):
+                data.append(4)
+                data.append(button.rawValue)
+                data.append(action.rawValue)
+                data.append(Self.pressureByte(pressure))
             case let .scroll(dx, dy):
                 data.append(3)
                 data.append(contentsOf: bigEndian(fixedPoint(dx)))
@@ -132,6 +144,16 @@ public enum RemoteInputBatchCodec {
                     throw RemoteProtocolError.invalidMessage
                 }
                 events.append(.click(button: button, action: action))
+            case 4:
+                guard let button = RemoteInputButton(rawValue: try reader.readByte()),
+                      let action = RemoteInputAction(rawValue: try reader.readByte()) else {
+                    throw RemoteProtocolError.invalidMessage
+                }
+                events.append(.press(
+                    button: button,
+                    action: action,
+                    pressure: Self.pressure(fromByte: try reader.readByte())
+                ))
             case 3:
                 let dx = try reader.readFixedPoint()
                 let dy = try reader.readFixedPoint()
@@ -149,6 +171,15 @@ public enum RemoteInputBatchCodec {
 
     static func fromFixedPoint(_ value: Int16) -> Double {
         Double(value) / fixedPointScale
+    }
+
+    /// Pressure on the wire as one byte, 255 = full press.
+    static func pressureByte(_ pressure: Double) -> UInt8 {
+        UInt8(clamping: Int((min(max(pressure, 0), 1) * 255).rounded()))
+    }
+
+    static func pressure(fromByte byte: UInt8) -> Double {
+        Double(byte) / 255.0
     }
 
     private static func bigEndian(_ value: some FixedWidthInteger) -> [UInt8] {

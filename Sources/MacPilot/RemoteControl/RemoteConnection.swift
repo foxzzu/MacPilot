@@ -289,7 +289,7 @@ final class RemoteConnection: Identifiable {
             deviceName: host.deviceStore.deviceName,
             paired: paired,
             serverNonce: serverNonce,
-            capabilities: [.lock, .displayOff, .wake, .unlock, .realtimeInput]
+            capabilities: [.lock, .displayOff, .wake, .unlock, .realtimeInput, .inputPressure]
         )
         if !paired {
             let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: serverNonce)

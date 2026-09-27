@@ -933,6 +933,9 @@ final class RemoteAppModel: ObservableObject {
     /// not, and the trackpad entry explains that instead of failing blindly.
     var supportsRealtimeInput: Bool { connection.supportsRealtimeInput }
 
+    /// Whether the connected Mac reads graded pressure from press events.
+    var supportsInputPressure: Bool { connection.supportsInputPressure }
+
     /// Quality of the link currently carrying the session, from the trackpad's
     /// point of view. AWDL rides the same network transport — the race that
     /// picks the session already prefers the fastest path, and AWDL is

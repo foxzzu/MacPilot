@@ -35,6 +35,54 @@ struct RemoteInputBatchCodecTests {
         #expect(RemoteInputBatchCodec.fixedPoint(-9_999) == Int16.min)
     }
 
+    @Test("press events round trip with graded pressure")
+    func pressRoundTrip() throws {
+        let batch = RemoteInputBatch(
+            timestampMilliseconds: 7,
+            events: [
+                .press(button: .left, action: .down, pressure: 0.62),
+                .press(button: .left, action: .up, pressure: 0.62),
+                .press(button: .right, action: .down, pressure: 1.0),
+            ]
+        )
+        let decoded = try RemoteInputBatchCodec.decode(try RemoteInputBatchCodec.encode(batch))
+        #expect(decoded.events.count == 3)
+        guard case let .press(_, _, firstPressure) = decoded.events[0] else {
+            Issue.record("expected a press event")
+            return
+        }
+        // One byte of resolution: 0.62 must survive to within half a step.
+        #expect(abs(firstPressure - 0.62) < 1.0 / 255.0 / 2 + 0.001)
+        guard case let .press(_, _, upPressure) = decoded.events[1] else {
+            Issue.record("expected a press event")
+            return
+        }
+        #expect(abs(upPressure - 0.62) < 1.0 / 255.0 / 2 + 0.001)
+        #expect(decoded.events[2] == .press(button: .right, action: .down, pressure: 1.0))
+    }
+
+    @Test("pressure clamps and quantizes onto one byte")
+    func pressureByteBounds() {
+        #expect(RemoteInputBatchCodec.pressureByte(-0.5) == 0)
+        #expect(RemoteInputBatchCodec.pressureByte(0.5) == 128)
+        #expect(RemoteInputBatchCodec.pressureByte(2) == 255)
+        #expect(RemoteInputBatchCodec.pressure(fromByte: 255) == 1.0)
+        #expect(RemoteInputBatchCodec.pressure(fromByte: 0) == 0)
+    }
+
+    @Test("kind-4 truncation throws, never traps")
+    func truncatedPressThrows() throws {
+        let encoded = try RemoteInputBatchCodec.encode(RemoteInputBatch(
+            timestampMilliseconds: 1,
+            events: [.press(button: .left, action: .down, pressure: 0.7)]
+        ))
+        for length in 0..<encoded.count {
+            #expect(throws: RemoteProtocolError.self) {
+                try RemoteInputBatchCodec.decode(encoded.prefix(length))
+            }
+        }
+    }
+
     @Test("any truncation throws, never traps")
     func truncatedInputThrows() throws {
         let encoded = try RemoteInputBatchCodec.encode(RemoteInputBatch(

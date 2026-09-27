@@ -183,7 +183,7 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
             deviceID: deviceStore.deviceID,
             name: deviceStore.deviceName,
             version: AppVersionInfo.current().version.description,
-            capabilities: [.lock, .displayOff, .wake, .unlock, .realtimeInput]
+            capabilities: [.lock, .displayOff, .wake, .unlock, .realtimeInput, .inputPressure]
         )
         listener.service = NWListener.Service(
             name: Self.bonjourName(from: info.name),

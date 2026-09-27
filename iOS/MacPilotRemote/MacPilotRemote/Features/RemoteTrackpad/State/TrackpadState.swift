@@ -50,6 +50,13 @@ struct TrackpadSettings: Equatable {
     var naturalScrolling: Bool = true
     var tapToClick: Bool = true
     var scrollInertia: Bool = true
+    /// Pressure simulation: off by default, everything behaves exactly as it
+    /// did before this existed.
+    var pressureMode: PressureMode = .off
+    /// Haptic bump when a simulated press actuates.
+    var pressureFeedback: Bool = true
+    /// Developer overlay with the live radius/score/state readout.
+    var pressureDebug: Bool = false
 }
 
 /// Persists trackpad preferences in `UserDefaults`. The key strings live here
@@ -61,6 +68,10 @@ struct TrackpadSettingsStore {
         static let naturalScrolling = "trackpad.naturalScrolling"
         static let tapToClick = "trackpad.tapToClick"
         static let scrollInertia = "trackpad.scrollInertia"
+        static let pressureMode = "trackpad.pressureMode"
+        static let pressureFeedback = "trackpad.pressureFeedback"
+        static let pressureDebug = "trackpad.pressureDebug"
+        static let pressureHintShown = "trackpad.pressureHintShown"
     }
 
     private let defaults: UserDefaults
@@ -90,6 +101,12 @@ struct TrackpadSettingsStore {
             if defaults.object(forKey: Key.scrollInertia) != nil {
                 settings.scrollInertia = defaults.bool(forKey: Key.scrollInertia)
             }
+            settings.pressureMode = defaults.string(forKey: Key.pressureMode)
+                .flatMap(PressureMode.init(rawValue:)) ?? .off
+            if defaults.object(forKey: Key.pressureFeedback) != nil {
+                settings.pressureFeedback = defaults.bool(forKey: Key.pressureFeedback)
+            }
+            settings.pressureDebug = defaults.bool(forKey: Key.pressureDebug)
             return settings
         }
         set {
@@ -97,6 +114,15 @@ struct TrackpadSettingsStore {
             defaults.set(newValue.naturalScrolling, forKey: Key.naturalScrolling)
             defaults.set(newValue.tapToClick, forKey: Key.tapToClick)
             defaults.set(newValue.scrollInertia, forKey: Key.scrollInertia)
+            defaults.set(newValue.pressureMode.rawValue, forKey: Key.pressureMode)
+            defaults.set(newValue.pressureFeedback, forKey: Key.pressureFeedback)
+            defaults.set(newValue.pressureDebug, forKey: Key.pressureDebug)
         }
+    }
+
+    /// The first-enable explanation shows exactly once, ever.
+    var pressureHintShown: Bool {
+        get { defaults.bool(forKey: Key.pressureHintShown) }
+        set { defaults.set(newValue, forKey: Key.pressureHintShown) }
     }
 }

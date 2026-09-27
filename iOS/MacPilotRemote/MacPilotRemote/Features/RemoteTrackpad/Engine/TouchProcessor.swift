@@ -33,7 +33,8 @@ enum TouchProcessor {
                 result.append(
                     TouchSample(
                         position: sample.location(in: view),
-                        time: sample.timestamp
+                        time: sample.timestamp,
+                        majorRadius: sample.majorRadius
                     )
                 )
             }

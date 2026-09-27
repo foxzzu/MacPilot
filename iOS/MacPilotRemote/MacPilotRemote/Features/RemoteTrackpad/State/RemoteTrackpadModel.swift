@@ -34,8 +34,14 @@ final class RemoteTrackpadModel: ObservableObject {
             engine.tapToClick = settings.tapToClick
             engine.naturalScrolling = settings.naturalScrolling
             acceleration.trackingSpeed = settings.trackingSpeed
+            // Takes effect on the very next touch: no reconnect, no session
+            // restart, and while off the engine never scores anything.
+            engine.pressureMode = settings.pressureMode
         }
     }
+    /// Live pressure telemetry for the debug overlay, refreshed a few times a
+    /// second only while the overlay is enabled.
+    @Published var pressureDebug: (radius: CGFloat, score: Double, state: String)?
     @Published private(set) var keyboardActive = false {
         didSet { syncInterfaceRotation() }
     }
@@ -57,6 +63,14 @@ final class RemoteTrackpadModel: ObservableObject {
         self.orientation = orientation
     }
 
+    /// True exactly once, the first time pressure simulation turns on.
+    func shouldShowPressureHint(for mode: PressureMode) -> Bool {
+        guard mode != .off else { return false }
+        guard !store.pressureHintShown else { return false }
+        store.pressureHintShown = true
+        return true
+    }
+
     private var engine = GestureEngine()
     private var velocity = VelocityCalculator()
     private var acceleration = AccelerationCurve()
@@ -76,6 +90,7 @@ final class RemoteTrackpadModel: ObservableObject {
     private var hapticAfterSend = false
     private var flushTask: Task<Void, Never>?
     private var beginTask: Task<Void, Never>?
+    private var lastDebugRefreshAt: TimeInterval = 0
     private var keyboardRequestTask: Task<Void, Never>?
     private var keyboardRecheckTask: Task<Void, Never>?
     private var keyboardRecheckPending = false
@@ -105,6 +120,7 @@ final class RemoteTrackpadModel: ObservableObject {
         settings = stored.settings
         engine.tapToClick = settings.tapToClick
         engine.naturalScrolling = settings.naturalScrolling
+        engine.pressureMode = settings.pressureMode
         acceleration.trackingSpeed = settings.trackingSpeed
     }
 
@@ -200,9 +216,23 @@ final class RemoteTrackpadModel: ObservableObject {
                 self.flushIfNeeded()
                 self.recheckKeyboardAfterClickIfNeeded()
                 self.emitHapticIfNeeded()
+                self.refreshPressureDebug()
                 try? await Task.sleep(for: .seconds(Self.flushInterval))
             }
         }
+    }
+
+    /// The debug overlay refreshes at a lazy 4 Hz — it is a tuning aid, not a
+    /// gesture surface, and SwiftUI re-renders on every publish.
+    private func refreshPressureDebug() {
+        guard settings.pressureDebug, phase.isActiveLike else {
+            if pressureDebug != nil { pressureDebug = nil }
+            return
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastDebugRefreshAt >= 0.25 else { return }
+        lastDebugRefreshAt = now
+        pressureDebug = engine.pressureDebugSnapshot(time: now)
     }
 
     /// Called from the view whenever the app model's connection state moves.
@@ -360,9 +390,18 @@ final class RemoteTrackpadModel: ObservableObject {
                 let (vx, vy) = mapped(dx: velocityX, dy: velocityY)
                 inertia.start(velocity: CGPoint(x: vx, y: vy))
 
-            case let .click(button, action):
-                append(.click(button: button, action: action))
-                if action == .down { hapticAfterSend = true }
+            case let .click(button, action, pressure):
+                if pressure < 1, appModel?.supportsInputPressure == true {
+                    // A graded press; Macs without the pressure capability
+                    // get the plain click instead, which keeps old versions
+                    // decoding the batch untouched.
+                    append(.press(button: button, action: action, pressure: pressure))
+                } else {
+                    append(.click(button: button, action: action))
+                }
+                if action == .down {
+                    hapticAfterSend = settings.pressureMode == .off || settings.pressureFeedback
+                }
                 if action == .up, keyboardActive {
                     keyboardRecheckPending = true
                 }
@@ -478,7 +517,8 @@ final class RemoteTrackpadModel: ObservableObject {
     }
 
     /// Runs each flush cycle so gestures can complete without waiting for a
-    /// touch callback (drag arming) and so the glide keeps scrolling.
+    /// touch callback (drag arming, deep-press actuation) and so the glide
+    /// keeps scrolling.
     private func tickGestures() {
         let now = ProcessInfo.processInfo.systemUptime
         apply(engine.tick(time: now))

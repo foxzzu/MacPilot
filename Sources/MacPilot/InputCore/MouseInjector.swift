@@ -16,6 +16,11 @@ protocol MouseInjecting: AnyObject {
     func moveCursor(dx: Double, dy: Double, buttons: RemoteInputButtons)
 
     func click(button: RemoteInputButton, action: RemoteInputAction)
+
+    /// A click carrying simulated pressure (0…1), the remote trackpad's
+    /// stand-in for a real trackpad press. Pressure-aware apps — drawing
+    /// surfaces above all — read it straight off the injected event.
+    func press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double)
 }
 
 @MainActor
@@ -70,6 +75,17 @@ final class MouseInjector: MouseInjecting {
     }
 
     func click(button: RemoteInputButton, action: RemoteInputAction) {
+        postClick(button: button, action: action, pressure: nil)
+    }
+
+    func press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double) {
+        postClick(button: button, action: action, pressure: pressure)
+    }
+
+    /// `pressure` rides only on down events: macOS reads the release of a
+    /// press as pressure 0, and grading the up event would leave apps with a
+    /// half-hearted stroke end.
+    private func postClick(button: RemoteInputButton, action: RemoteInputAction, pressure: Double?) {
         guard let source, let location = CGEvent(source: source)?.location else { return }
         let type: CGEventType
         let cgButton: CGMouseButton
@@ -85,6 +101,9 @@ final class MouseInjector: MouseInjecting {
             mouseCursorPosition: location,
             mouseButton: cgButton
         ) else { return }
+        if let pressure, action == .down, pressure < 1 {
+            event.setDoubleValueField(.mouseEventPressure, value: max(pressure, 0.1))
+        }
         event.post(tap: .cghidEventTap)
     }
 }

@@ -6,6 +6,10 @@ struct TouchSample: Equatable {
     var position: CGPoint
     /// `UITouch.timestamp` — system uptime seconds.
     var time: TimeInterval
+    /// `UITouch.majorRadius` — the contact patch radius in points. Pressing
+    /// harder widens it, which is the raw signal the pressure simulation
+    /// scores. Zero when the platform does not report one.
+    var majorRadius: CGFloat = 0
 }
 
 enum TouchPhase {

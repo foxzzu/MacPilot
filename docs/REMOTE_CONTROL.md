@@ -183,6 +183,28 @@ system gesture engine) remains out of reach: Apple's multitouch report format
 is undocumented, and a half-formed multitouch device would degrade rather
 than improve the experience.
 
+### Simulated pressure
+
+Optional, off by default (`PressureMode`: off/light/standard/strong). When
+enabled, the phone grades clicks from the contact patch: `UITouch.majorRadius`
+grows as the finger presses into the glass, and growth relative to the
+touch's own start — not an absolute radius, which varies by finger — is the
+press signal. A light landing carries the mode's floor pressure; a clearly
+widening contact climbs to full. A still touch held ≥ 0.4 s with enough
+growth actuates the button early (`mouseDown`), so press-and-hold turns into
+a drag without the double-tap; a resting finger keeps a flat radius and never
+presses.
+
+On the wire this is event kind `4` (`u8 button | u8 action | u8 pressure`,
+0–255 → 0–1) inside the realtime batch, gated by the `.inputPressure`
+capability in the server hello and TXT record. Macs that advertise it apply
+the grade via `kCGMouseEventPressure` on the injected down event — only the
+CGEvent path carries the grade; the virtual HID report has no force field.
+Older Macs never see kind-4 events: the phone downgrades every press to a
+plain click for them, so the feature is invisible until both ends update.
+While the mode is `off` nothing scores radius anywhere and behavior is
+byte-for-byte the trackpad of previous releases.
+
 ## Handshake
 
 ### Already paired

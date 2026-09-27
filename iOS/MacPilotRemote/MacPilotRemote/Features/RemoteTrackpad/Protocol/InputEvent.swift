@@ -9,6 +9,9 @@ import MacPilotRemoteProtocol
 enum InputEvent: Equatable {
     case move(dx: Double, dy: Double, dragging: Bool)
     case click(button: RemoteInputButton, action: RemoteInputAction)
+    /// A click graded by the pressure simulation. Only sent to Macs that
+    /// advertise `.inputPressure`; everyone else gets plain clicks.
+    case press(button: RemoteInputButton, action: RemoteInputAction, pressure: Double)
     case scroll(dx: Double, dy: Double)
 }
 
@@ -25,6 +28,8 @@ enum InputEncoder {
                     return .move(dx: dx, dy: dy, buttons: buttons)
                 case let .click(button, action):
                     return .click(button: button, action: action)
+                case let .press(button, action, pressure):
+                    return .press(button: button, action: action, pressure: pressure)
                 case let .scroll(dx, dy):
                     return .scroll(dx: dx, dy: dy)
                 }

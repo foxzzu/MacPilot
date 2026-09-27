@@ -81,6 +81,9 @@ final class RemoteConnectionManager {
     var isPairing: Bool { phase == .pairing }
     /// The Mac accepts realtime input batches (the trackpad channel).
     var supportsRealtimeInput: Bool { serverCapabilities.contains(.realtimeInput) }
+    /// The Mac reads graded pressure from press events; without it the
+    /// trackpad downgrades every press to a plain click.
+    var supportsInputPressure: Bool { serverCapabilities.contains(.inputPressure) }
     /// True once the link is up, even if the handshake is still running. The
     /// race uses it to tell "still dialling" from "mid handshake", which decides
     /// whether an attempt may still be cut short.
