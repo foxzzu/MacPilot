@@ -183,7 +183,9 @@ enum RemoteText {
         "trackpadTapToClick": "轻点来点按",
         "trackpadScrollInertia": "滚动惯性",
         "trackpadDone": "完成",
-        "trackpadGesturesHint": "单指移动光标；轻点＝左键；连点两下＝双击；轻点两下后按住＝拖动；双指滑动＝滚动；双指轻点＝右键。横屏时手机顶部朝左。"
+        "trackpadHideKeyboard": "收起键盘",
+        "trackpadGesturesHint": "单指移动光标；轻点＝左键；在输入框上连点两下＝打开键盘，其他位置＝双击；轻点两下后按住＝拖动；双指滑动＝滚动；双指轻点＝右键。横屏时手机顶部朝左。",
+        "errorTextInputUnavailable": "Mac 上的输入框已失去焦点。",
     ]
 
     private static let english: [String: String] = [
@@ -341,7 +343,9 @@ enum RemoteText {
         "trackpadTapToClick": "Tap to click",
         "trackpadScrollInertia": "Scrolling inertia",
         "trackpadDone": "Done",
-        "trackpadGesturesHint": "One finger moves the cursor; tap = left click; two quick taps = double click; double-tap and hold = drag; two-finger slide = scroll; two-finger tap = right click. Landscape holds the phone's top to the left."
+        "trackpadHideKeyboard": "Hide keyboard",
+        "trackpadGesturesHint": "One finger moves the cursor; tap = left click; double-tap on a text field = keyboard, elsewhere = double click; double-tap and hold = drag; two-finger slide = scroll; two-finger tap = right click. Landscape holds the phone's top to the left.",
+        "errorTextInputUnavailable": "The Mac text field lost focus.",
     ]
 }
 

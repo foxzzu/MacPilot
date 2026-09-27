@@ -22,6 +22,7 @@ final class RemoteTrackpadModel: ObservableObject {
     /// Text key of the failure that stopped the session from arming
     /// (accessibility missing, Mac too old, …). `nil` once armed.
     @Published private(set) var beginErrorKey: String?
+    @Published private(set) var keyboardActive = false
     @Published private(set) var orientation: TrackpadOrientation {
         didSet { store.orientation = orientation }
     }
@@ -64,6 +65,9 @@ final class RemoteTrackpadModel: ObservableObject {
     private var pending: [InputEvent] = []
     private var flushTask: Task<Void, Never>?
     private var beginTask: Task<Void, Never>?
+    private var keyboardRequestTask: Task<Void, Never>?
+    private var textInputTask: Task<Void, Never>?
+    private var textInputEpoch = 0
 
     /// The flush cadence: 120 Hz, matching the touch sample rate.
     static let flushInterval: TimeInterval = 1.0 / 120.0
@@ -116,8 +120,14 @@ final class RemoteTrackpadModel: ObservableObject {
         beginTask = nil
         pending.removeAll()
         inertia.stop()
+        keyboardActive = false
+        keyboardRequestTask?.cancel()
+        keyboardRequestTask = nil
         let appModel = self.appModel
+        let pendingText = textInputTask
         Task {
+            await pendingText?.value
+            await appModel?.endTextInput()
             await appModel?.endRealtimeInput()
             self.phase = .idle
         }
@@ -139,6 +149,7 @@ final class RemoteTrackpadModel: ObservableObject {
         case .success(let session):
             beginErrorKey = nil
             usesSystemAcceleration = session.usesSystemAcceleration
+            engine.keyboardEnabled = session.supportsTextInput
             phase = .active
             batchesSent = 0
             eventsSent = 0
@@ -182,6 +193,10 @@ final class RemoteTrackpadModel: ObservableObject {
     }
 
     private func dropMotion() {
+        keyboardActive = false
+        textInputEpoch += 1
+        keyboardRequestTask?.cancel()
+        keyboardRequestTask = nil
         pending.removeAll()
         inertia.stop()
         engine.reset()
@@ -267,7 +282,88 @@ final class RemoteTrackpadModel: ObservableObject {
             case let .click(button, action):
                 append(.click(button: button, action: action))
                 if action == .down { Haptics.impact() }
+            case .requestKeyboard:
+                requestKeyboard()
             }
+        }
+    }
+
+    private func requestKeyboard() {
+        guard !keyboardActive, keyboardRequestTask == nil, let appModel else { return }
+        keyboardRequestTask = Task { [weak self] in
+            // A quick dismissal followed by another double tap must finish
+            // the previous end command before starting the new session.
+            await self?.textInputTask?.value
+            guard !Task.isCancelled else { return }
+            let accepted = await appModel.beginTextInput()
+            guard let self else { return }
+            self.keyboardRequestTask = nil
+            guard self.phase == .active, !Task.isCancelled else { return }
+            if accepted {
+                self.textInputEpoch += 1
+                self.keyboardActive = true
+            } else {
+                // Preserve the second click when the pointer is not on text.
+                self.append(.click(button: .left, action: .down))
+                self.append(.click(button: .left, action: .up))
+                self.flushIfNeeded()
+            }
+        }
+    }
+
+    func sendTextInput(_ operation: RemoteTextInputOperation) {
+        guard keyboardActive, let appModel else { return }
+        if case let .insert(text) = operation {
+            for chunk in Self.textChunks(text) {
+                enqueueTextInput(.insert(chunk), appModel: appModel)
+            }
+        } else {
+            enqueueTextInput(operation, appModel: appModel)
+        }
+    }
+
+    private static func textChunks(_ text: String) -> [String] {
+        var chunks: [String] = []
+        var chunk = ""
+        var units = 0
+        for scalar in text.unicodeScalars {
+            let scalarUnits = scalar.value > 0xFFFF ? 2 : 1
+            if units + scalarUnits > 256 {
+                chunks.append(chunk)
+                chunk = ""
+                units = 0
+            }
+            chunk.unicodeScalars.append(scalar)
+            units += scalarUnits
+        }
+        if !chunk.isEmpty { chunks.append(chunk) }
+        return chunks
+    }
+
+    private func enqueueTextInput(_ operation: RemoteTextInputOperation, appModel: RemoteAppModel) {
+        let previous = textInputTask
+        let epoch = textInputEpoch
+        textInputTask = Task { [weak self] in
+            await previous?.value
+            // Committed keys still drain if the user immediately dismisses
+            // the keyboard or leaves the page.
+            guard let self, self.textInputEpoch == epoch else { return }
+            if !(await appModel.sendTextInput(operation)) {
+                self.keyboardActive = false
+                self.textInputEpoch += 1
+                await appModel.endTextInput()
+            }
+        }
+    }
+
+    func dismissKeyboard() {
+        guard keyboardActive else { return }
+        keyboardActive = false
+        guard let appModel else { return }
+        let previous = textInputTask
+        textInputTask = Task {
+            await previous?.value
+            await appModel.endTextInput()
         }
     }
 

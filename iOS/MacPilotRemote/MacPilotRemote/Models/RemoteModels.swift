@@ -157,6 +157,7 @@ extension RemoteErrorCode {
         case .displaySleepFailed: return "errorDisplaySleepFailed"
         case .brightnessUnavailable: return "errorBrightnessUnavailable"
         case .volumeUnavailable: return "errorVolumeUnavailable"
+        case .textInputUnavailable: return "errorTextInputUnavailable"
         case .commandTimeout: return "errorTimeout"
         case .replayDetected: return "errorNetwork"
         case .invalidMessage: return "errorNetwork"

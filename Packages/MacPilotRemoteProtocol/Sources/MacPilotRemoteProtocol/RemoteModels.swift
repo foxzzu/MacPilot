@@ -50,6 +50,8 @@ public struct MacRemoteState: Codable, Sendable, Equatable {
     /// double it. `no` (or `nil` from an older Mac build) means the phone
     /// keeps its own acceleration curve.
     public var realtimeInputSystemAcceleration: RemoteBooleanState?
+    /// Set in the trackpad begin response. Missing means an older Mac build.
+    public var remoteTextInputAvailable: RemoteBooleanState?
 
     public init(
         screenLocked: RemoteBooleanState = .unknown,
@@ -60,7 +62,8 @@ public struct MacRemoteState: Codable, Sendable, Equatable {
         brightness: Double? = nil,
         volume: Double? = nil,
         volumeMuted: RemoteBooleanState? = nil,
-        realtimeInputSystemAcceleration: RemoteBooleanState? = nil
+        realtimeInputSystemAcceleration: RemoteBooleanState? = nil,
+        remoteTextInputAvailable: RemoteBooleanState? = nil
     ) {
         self.screenLocked = screenLocked
         self.canUnlock = canUnlock
@@ -71,6 +74,7 @@ public struct MacRemoteState: Codable, Sendable, Equatable {
         self.volume = volume
         self.volumeMuted = volumeMuted
         self.realtimeInputSystemAcceleration = realtimeInputSystemAcceleration
+        self.remoteTextInputAvailable = remoteTextInputAvailable
     }
 }
 
@@ -125,6 +129,7 @@ public enum RemoteErrorCode: String, Codable, Sendable, Equatable, CaseIterable 
     case brightnessUnavailable
     /// No output device on this Mac exposes a volume control.
     case volumeUnavailable
+    case textInputUnavailable
 
     case replayDetected
     case invalidMessage

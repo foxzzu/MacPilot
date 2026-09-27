@@ -59,7 +59,8 @@ struct RemoteCommandRouter {
         case .setBrightness, .setVolume:
             return respondToLevel(request, started: started)
 
-        case .beginRealtimeInput, .endRealtimeInput:
+        case .beginRealtimeInput, .endRealtimeInput,
+             .beginTextInput, .textInput, .endTextInput:
             // Intercepted by `RemoteConnection` before the router: they arm
             // per-connection session state, which the router never sees.
             return failure(for: request, code: .unsupportedCommand)

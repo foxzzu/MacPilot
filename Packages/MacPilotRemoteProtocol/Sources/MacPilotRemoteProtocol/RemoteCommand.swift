@@ -24,6 +24,10 @@ public enum RemoteCommand: String, Codable, Sendable, CaseIterable, Equatable {
     case beginRealtimeInput
     /// Disarms the realtime input channel.
     case endRealtimeInput
+    /// Opens the phone keyboard only when the pointer is over editable text.
+    case beginTextInput
+    case textInput
+    case endTextInput
 
     /// Commands that change the machine and therefore always require an
     /// authenticated, encrypted session.
@@ -32,7 +36,8 @@ public enum RemoteCommand: String, Codable, Sendable, CaseIterable, Equatable {
         case .getState, .ping:
             return false
         case .lockScreen, .displayOff, .wakeDisplay, .unlock, .wakeAndUnlock,
-             .setBrightness, .setVolume, .beginRealtimeInput, .endRealtimeInput:
+             .setBrightness, .setVolume, .beginRealtimeInput, .endRealtimeInput,
+             .beginTextInput, .textInput, .endTextInput:
             return true
         }
     }

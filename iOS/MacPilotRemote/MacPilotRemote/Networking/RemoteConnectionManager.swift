@@ -215,6 +215,7 @@ final class RemoteConnectionManager {
         /// and applies its own acceleration; the phone must send raw finger
         /// deltas instead of pre-scaled ones.
         var usesSystemAcceleration: Bool
+        var supportsTextInput: Bool
     }
 
     /// Arms the realtime input channel.
@@ -231,11 +232,27 @@ final class RemoteConnectionManager {
             return .failure(RealtimeInputError(messageKey: response.error?.code.messageKey ?? "errorInternal"))
         }
         let systemAcceleration = response.state?.realtimeInputSystemAcceleration == .yes
-        return .success(RealtimeInputSession(usesSystemAcceleration: systemAcceleration))
+        return .success(RealtimeInputSession(
+            usesSystemAcceleration: systemAcceleration,
+            supportsTextInput: response.state?.remoteTextInputAvailable == .yes
+        ))
     }
 
     func endRealtimeInput() async {
         _ = try? await send(.endRealtimeInput)
+    }
+
+    func beginTextInput() async -> Bool {
+        (try? await send(.beginTextInput, timeout: 3).success) == true
+    }
+
+    func sendTextInput(_ operation: RemoteTextInputOperation) async -> Bool {
+        guard let payload = try? operation.encoded() else { return false }
+        return (try? await send(.textInput, payload: payload, timeout: 3).success) == true
+    }
+
+    func endTextInput() async {
+        _ = try? await send(.endTextInput, timeout: 3)
     }
 
     /// Sends one binary input batch, fire and forget.

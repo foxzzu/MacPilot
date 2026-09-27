@@ -429,6 +429,8 @@ final class RemoteConnection: Identifiable {
             // only this connection owns, and begin doubles as the
             // Accessibility gate.
             try sendSecure(realtimeInputResponse(for: request), key: key)
+        case .beginTextInput, .textInput, .endTextInput:
+            try sendSecure(textInputResponse(for: request), key: key)
         default:
             let response = await router.response(for: request, isAuthenticated: isAuthenticated)
             try sendSecure(response, key: key)
@@ -462,6 +464,7 @@ final class RemoteConnection: Identifiable {
                 // with the virtual HID device the system applies its own curve,
                 // so the phone sends raw finger deltas.
                 state.realtimeInputSystemAcceleration = host.inputCoordinator.usesVirtualDevice ? .yes : .no
+                state.remoteTextInputAvailable = .yes
                 return RemoteResponse(requestID: request.requestID, success: true, state: state)
             case .accessibilityRequired:
                 return RemoteResponse(
@@ -483,6 +486,31 @@ final class RemoteConnection: Identifiable {
                 state: host.screenControl.currentState()
             )
         }
+    }
+
+    private func textInputResponse(for request: RemoteRequest) -> RemoteResponse {
+        guard isAuthenticated, isRealtimeInputArmed, let host else {
+            return RemoteResponse(requestID: request.requestID, success: false,
+                                  error: RemoteError(code: .unauthenticated))
+        }
+        let success: Bool
+        switch request.command {
+        case .beginTextInput:
+            success = host.inputCoordinator.beginTextInput(connectionID: id)
+        case .textInput:
+            guard let operation = try? RemoteTextInputOperation.decoded(from: request.payload) else {
+                return RemoteResponse(requestID: request.requestID, success: false,
+                                      error: RemoteError(code: .invalidMessage))
+            }
+            success = host.inputCoordinator.handleTextInput(operation, connectionID: id)
+        case .endTextInput:
+            host.inputCoordinator.endTextInput(connectionID: id)
+            success = true
+        default:
+            success = false
+        }
+        return RemoteResponse(requestID: request.requestID, success: success,
+                              error: success ? nil : RemoteError(code: .textInputUnavailable))
     }
 
     // MARK: - Sending

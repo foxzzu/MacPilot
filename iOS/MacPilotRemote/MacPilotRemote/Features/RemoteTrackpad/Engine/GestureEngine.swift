@@ -17,6 +17,8 @@ enum GestureOutput: Equatable {
     /// The fingers lifted mid-scroll; carries the finger velocity (points/s)
     /// so the pipeline can start the glide.
     case scrollEnd(velocityX: Double, velocityY: Double)
+    /// The second quick tap asks the Mac whether the pointer is over text.
+    case requestKeyboard
 }
 
 /// Magic-Trackpad style gestures over raw touch callbacks:
@@ -31,6 +33,7 @@ enum GestureOutput: Equatable {
 /// flush cycle, so the whole gesture layer is value-semantic and testable.
 struct GestureEngine {
     var tapToClick: Bool = true
+    var keyboardEnabled: Bool = false
     var naturalScrolling: Bool = true
 
     /// Tunables. Generous slop keeps resting fingers from drifting the cursor;
@@ -193,6 +196,10 @@ struct GestureEngine {
             guard quiet, tapToClick else {
                 lastTapEndedAt = nil
                 return []
+            }
+            if finger.armedForDrag, keyboardEnabled {
+                lastTapEndedAt = nil
+                return [.requestKeyboard]
             }
             lastTapEndedAt = time
             // The click pair itself is the click; a second tap inside the

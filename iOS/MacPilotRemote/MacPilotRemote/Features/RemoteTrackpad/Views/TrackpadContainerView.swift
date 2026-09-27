@@ -27,6 +27,9 @@ struct TrackpadContainerView: View {
                 bottomBar
             }
             .padding(.top, 6)
+            RemoteKeyboardInputView(model: model)
+                .frame(width: 1, height: 1)
+                .accessibilityHidden(true)
         }
         .opacity(appeared ? 1 : 0.05)
         .scaleEffect(appeared ? 1 : 0.55)
@@ -186,6 +189,16 @@ struct TrackpadContainerView: View {
         HStack(spacing: 12) {
             TrackpadOrientationPicker(model: model) { appModel.text($0) }
             Spacer(minLength: 8)
+            if model.keyboardActive {
+                Button {
+                    model.dismissKeyboard()
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.body.weight(.medium))
+                        .frame(width: 44, height: 34)
+                }
+                .accessibilityLabel(appModel.text("trackpadHideKeyboard"))
+            }
             Button {
                 showSettings = true
             } label: {

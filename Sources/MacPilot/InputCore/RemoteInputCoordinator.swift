@@ -29,6 +29,7 @@ final class RemoteInputCoordinator {
     private let mouse: MouseInjecting
     private let scroll: ScrollInjecting
     private let virtualDevice: VirtualHIDDevice
+    private let textInput = RemoteTextInputController()
     private let logHandler: (String) -> Void
     private var armedConnections = Set<UUID>()
     /// Button bits currently held in the virtual device, so a mid-session
@@ -85,12 +86,25 @@ final class RemoteInputCoordinator {
 
     func endSession(connectionID: UUID) {
         guard armedConnections.remove(connectionID) != nil else { return }
+        textInput.end(connectionID: connectionID)
         releaseVirtualButtons()
         logHandler("realtime input session ended")
     }
 
     func connectionDidClose(connectionID: UUID) {
         endSession(connectionID: connectionID)
+    }
+
+    func beginTextInput(connectionID: UUID) -> Bool {
+        armedConnections.contains(connectionID) && textInput.begin(connectionID: connectionID)
+    }
+
+    func handleTextInput(_ operation: RemoteTextInputOperation, connectionID: UUID) -> Bool {
+        armedConnections.contains(connectionID) && textInput.handle(operation, connectionID: connectionID)
+    }
+
+    func endTextInput(connectionID: UUID) {
+        textInput.end(connectionID: connectionID)
     }
 
     /// Applies one decoded batch. Motion that arrives without a session is

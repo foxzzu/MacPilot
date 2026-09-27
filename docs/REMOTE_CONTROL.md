@@ -127,6 +127,31 @@ constructor). The iPhone side lives under
 `iOS/MacPilotRemote/MacPilotRemote/Features/RemoteTrackpad/` (touch surface →
 `GestureEngine` → velocity/acceleration → binary batch).
 
+### Phone keyboard for Mac text fields
+
+The first trackpad tap remains a normal click, so it focuses the control beneath
+the pointer. On the second quick tap, a Mac that advertised
+`remoteTextInputAvailable` receives `beginTextInput` over the authenticated
+`0x02` command channel. The Mac hit-tests the current pointer position with
+Accessibility, walks up to an enabled editable text field, text area, or editable
+combo box, focuses it, and retains that element for this connection. Only an
+accepted request opens the native iPhone keyboard. If the Mac rejects the
+request (including when the pointer is over ordinary content), the phone sends
+the second click instead, preserving normal double-click behavior. An older Mac
+never receives this new command and continues to use double tap as double click.
+
+Committed iPhone text is sent as `textInput` operations (`insert`,
+`deleteBackward`, `returnKey`) on the encrypted command channel. IME marked
+text stays on the phone until the user commits it. Insertions are divided into
+at most 256 UTF-16 units per operation, so long paste operations can pass the
+protocol limit. The Mac rechecks that the pinned element is still focused
+before every operation, then posts Unicode keyboard events or Backspace/Return
+key events. If focus changes, input stops and the phone dismisses its keyboard.
+Dismissal and leaving the trackpad send `endTextInput`; disconnect also clears
+the Mac's per-connection target. This feature needs the Mac's Accessibility
+grant. Custom controls that do not expose a standard editable Accessibility
+role or do not accept Unicode keyboard events may not support remote typing.
+
 ### Injection paths: virtual HID device vs CGEvent
 
 The coordinator prefers the device-level path: `VirtualHIDDevice` creates a

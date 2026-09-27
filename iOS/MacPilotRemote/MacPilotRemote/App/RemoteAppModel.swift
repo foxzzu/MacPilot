@@ -952,6 +952,14 @@ final class RemoteAppModel: ObservableObject {
         connection.sendRealtimeInput(batch)
     }
 
+    func beginTextInput() async -> Bool { await connection.beginTextInput() }
+
+    func sendTextInput(_ operation: RemoteTextInputOperation) async -> Bool {
+        await connection.sendTextInput(operation)
+    }
+
+    func endTextInput() async { await connection.endTextInput() }
+
     // MARK: - Commands
 
     func perform(_ command: RemoteCommand) async {
