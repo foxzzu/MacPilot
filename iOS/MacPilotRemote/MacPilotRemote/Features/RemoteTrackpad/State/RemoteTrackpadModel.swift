@@ -57,6 +57,9 @@ final class RemoteTrackpadModel: ObservableObject {
 
     /// Pressure of the last legacy press-down, re-reported on release.
     private var lastLegacyPressPressure: Double = 1
+    /// Click-down feedback de-dup: the second tap of a double click stays
+    /// silent, so one gesture sounds once.
+    private var lastClickFeedbackAt: TimeInterval = 0
     @Published private(set) var keyboardActive = false {
         didSet { syncInterfaceRotation() }
     }
@@ -415,7 +418,13 @@ final class RemoteTrackpadModel: ObservableObject {
                     append(.click(button: button, action: action))
                 }
                 if action == .down {
-                    hapticAfterSend = settings.pressureMode == .off || settings.pressureFeedback
+                    let now = ProcessInfo.processInfo.systemUptime
+                    // One gesture, one sound: the second tap of a double
+                    // click lands inside the double-tap window and stays
+                    // silent. The clicks themselves still both go out.
+                    let secondTapOfPair = now - lastClickFeedbackAt <= GestureEngine.doubleTapWindow
+                    hapticAfterSend = (settings.pressureMode == .off || settings.pressureFeedback) && !secondTapOfPair
+                    lastClickFeedbackAt = now
                 }
                 if action == .up, keyboardActive {
                     keyboardRecheckPending = true
