@@ -181,6 +181,41 @@ struct L2CAPStreamTransportTests {
     }
 
     @MainActor
+    @Test("a queued write does not wait for the fallback retry timer")
+    func queuedWriteWakesPump() async {
+        let (input, output) = Self.makeLoopbackStreams(bufferSize: 1024)
+        let transport = L2CAPStreamTransport(input: input, output: output)
+        let recorder = Recorder()
+        var sendAt = Date()
+        var latencies: [TimeInterval] = []
+        transport.onStateChange = { recorder.states.append($0) }
+        transport.onReceive = { chunk in
+            recorder.chunks.append(chunk)
+            latencies.append(Date().timeIntervalSince(sendAt))
+        }
+        transport.start()
+        guard await Self.waitUntil({ recorder.states.contains(.ready) }) else {
+            Issue.record("stream never became ready")
+            transport.cancel()
+            return
+        }
+
+        for index in 0..<5 {
+            sendAt = Date()
+            transport.send(Data([UInt8(index)])) { _ in }
+            let arrived = await Self.waitUntil { recorder.chunks.count == index + 1 }
+            guard arrived else {
+                Issue.record("queued write \(index) did not arrive")
+                transport.cancel()
+                return
+            }
+        }
+        transport.cancel()
+        let median = latencies.sorted()[latencies.count / 2]
+        #expect(median < 0.075, "median queued-write latency was \(median * 1000) ms")
+    }
+
+    @MainActor
     @Test("sending after cancel fails instead of silently queueing")
     func sendAfterCancelReportsCancelled() {
         let (input, output) = Self.makeLoopbackStreams(bufferSize: 1024)

@@ -1,4 +1,5 @@
 import CoreBluetooth
+import CoreFoundation
 import Foundation
 
 /// A BLE L2CAP channel presented as a byte stream.
@@ -106,6 +107,8 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
     private let lock = NSLock()
     private var pending: [Data] = []
     private var stopped = false
+    /// Guarded by `lock`; only the pump thread may touch the streams.
+    private var pumpRunLoop: CFRunLoop?
     private var inputOpened = false
     private var outputOpened = false
     private var reportedReady = false
@@ -138,7 +141,14 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
         // Only touches the queue: the streams belong to the pump thread.
         lock.lock()
         pending.append(data)
+        let runLoop = pumpRunLoop
         lock.unlock()
+        if let runLoop {
+            CFRunLoopPerformBlock(runLoop, RunLoop.Mode.default.rawValue as NSString) { [weak self] in
+                self?.writePending()
+            }
+            CFRunLoopWakeUp(runLoop)
+        }
     }
 
     func stop() {
@@ -146,7 +156,9 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
         // bounded run loop wait picks this up promptly.
         lock.lock()
         stopped = true
+        let runLoop = pumpRunLoop
         lock.unlock()
+        if let runLoop { CFRunLoopWakeUp(runLoop) }
     }
 
     private var isStopped: Bool {
@@ -157,6 +169,9 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
 
     private func run() {
         guard !isStopped else { return }
+        lock.lock()
+        pumpRunLoop = CFRunLoopGetCurrent()
+        lock.unlock()
         onDiagnostic?("L2CAP pump opening streams")
         input.delegate = self
         output.delegate = self
@@ -190,6 +205,9 @@ private final class StreamPump: NSObject, @unchecked Sendable, StreamDelegate {
         output.remove(from: .current, forMode: .default)
         input.delegate = nil
         output.delegate = nil
+        lock.lock()
+        pumpRunLoop = nil
+        lock.unlock()
         withExtendedLifetime(owner) {}
         onDiagnostic?("L2CAP pump closed rx=\(receivedBytes) tx=\(sentBytes)")
     }

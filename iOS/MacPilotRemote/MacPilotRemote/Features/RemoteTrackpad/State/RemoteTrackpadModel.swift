@@ -213,6 +213,9 @@ final class RemoteTrackpadModel: ObservableObject {
             outputs = engine.handleCancelled(remaining: touchCount)
         }
         apply(outputs)
+        // Touch callbacks already contain the coalesced samples for this display
+        // frame. Send them now instead of waiting for the next gesture/inertia tick.
+        flushIfNeeded()
     }
 
     private func touchTime(of samples: [TouchSample]) -> TimeInterval {

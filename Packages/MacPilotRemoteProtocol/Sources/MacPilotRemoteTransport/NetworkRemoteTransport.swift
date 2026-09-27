@@ -19,7 +19,11 @@ public final class NetworkRemoteTransport: RemoteTransport {
 
     /// Outbound: dial a Bonjour service or a remembered host/port.
     public convenience init(to endpoint: NWEndpoint, queue: DispatchQueue? = nil) {
-        let parameters = NWParameters.tcp
+        let tcpOptions = NWProtocolTCP.Options()
+        // Realtime pointer frames are tiny and arrive continuously. Do not
+        // hold one behind a delayed ACK while waiting to coalesce more bytes.
+        tcpOptions.noDelay = true
+        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
         // Peer-to-peer only helps when Bonjour handed us a service to resolve;
         // a raw host/port fast path stays plain TCP.
         if case .service = endpoint {

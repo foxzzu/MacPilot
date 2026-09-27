@@ -107,6 +107,7 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
         // kernel answers probes even when its app is frozen. The application
         // heartbeat in `RemoteConnection` covers that case.
         let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true
         tcpOptions.enableKeepalive = true
         tcpOptions.keepaliveIdle = 30
         tcpOptions.keepaliveCount = 3
@@ -213,7 +214,9 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
                 listener?.stateUpdateHandler = nil
                 listener?.cancel()
                 listener = nil
-                let parameters = NWParameters.tcp
+                let tcpOptions = NWProtocolTCP.Options()
+                tcpOptions.noDelay = true
+                let parameters = NWParameters(tls: nil, tcp: tcpOptions)
                 parameters.includePeerToPeer = true
                 parameters.allowLocalEndpointReuse = true
                 startWithDynamicPort(parameters: parameters)
