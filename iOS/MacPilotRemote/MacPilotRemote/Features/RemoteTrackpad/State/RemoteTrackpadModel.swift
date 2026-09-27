@@ -22,9 +22,11 @@ final class RemoteTrackpadModel: ObservableObject {
     /// Text key of the failure that stopped the session from arming
     /// (accessibility missing, Mac too old, …). `nil` once armed.
     @Published private(set) var beginErrorKey: String?
-    @Published private(set) var keyboardActive = false
     @Published private(set) var orientation: TrackpadOrientation {
-        didSet { store.orientation = orientation }
+        didSet {
+            store.orientation = orientation
+            syncInterfaceRotation()
+        }
     }
     @Published var settings: TrackpadSettings {
         didSet {
@@ -34,6 +36,7 @@ final class RemoteTrackpadModel: ObservableObject {
             acceleration.trackingSpeed = settings.trackingSpeed
         }
     }
+    @Published private(set) var keyboardActive = false
 
     private weak var appModel: RemoteAppModel?
     private var store = TrackpadSettingsStore()
@@ -104,6 +107,9 @@ final class RemoteTrackpadModel: ObservableObject {
     func open(appModel: RemoteAppModel) {
         guard phase == .idle else { return }
         self.appModel = appModel
+        // A sideways hold stored from the last session turns the page right
+        // away, before the flip-in animation runs.
+        syncInterfaceRotation()
         // Defense in depth for a Mac that does not advertise the realtime
         // channel: sending `beginRealtimeInput` anyway would make an older
         // Mac fail to decode the command and drop the whole session. Say so
@@ -123,6 +129,8 @@ final class RemoteTrackpadModel: ObservableObject {
     func close() {
         guard phase != .idle, phase != .exiting else { return }
         phase = .exiting
+        // The page is leaving; the rest of the app is portrait.
+        InterfaceOrientationController.shared.setSupported(.portrait)
         beginTask?.cancel()
         beginTask = nil
         pending.removeAll()
@@ -213,6 +221,13 @@ final class RemoteTrackpadModel: ObservableObject {
         keyboardRecheckTask?.cancel()
         keyboardRecheckTask = nil
         keyboardRecheckPending = false
+        resetMotionBuffers()
+    }
+
+    /// Clears in-flight motion so a mapping switch (or the scene rotating for
+    /// the keyboard) never jerks the cursor with deltas measured in the old
+    /// frame.
+    private func resetMotionBuffers() {
         pending.removeAll()
         pendingTouchAt = nil
         inertia.stop()
@@ -221,6 +236,17 @@ final class RemoteTrackpadModel: ObservableObject {
         scrollVelocity.reset()
         cursorTravel = .zero
         scrollTravel = .zero
+    }
+
+    /// Turns the page with the chosen hold: a sideways arrow rotates the
+    /// scene so the surface matches the way the phone is held — which is also
+    /// what makes the keyboard rise from the long edge. The page never
+    /// rotates on its own; only an explicit arrow tap turns it.
+    private func syncInterfaceRotation() {
+        resetMotionBuffers()
+        InterfaceOrientationController.shared.setSupported(
+            orientation.isLandscape ? InterfaceOrientationController.mask(for: orientation) : .portrait
+        )
     }
 
     // MARK: - Touch ingestion
@@ -295,13 +321,14 @@ final class RemoteTrackpadModel: ObservableObject {
                 }
 
             case let .scroll(dx, dy, time):
-                scrollTravel.x += dx
-                scrollTravel.y += dy
+                let (mdx, mdy) = mapped(dx: dx, dy: dy)
+                scrollTravel.x += mdx
+                scrollTravel.y += mdy
                 scrollVelocity.record(position: scrollTravel, time: time)
                 let gain = GestureEngine.scrollGain
                 append(.scroll(
-                    dx: quantized(dx * gain, into: &scrollRemainder.x),
-                    dy: quantized(dy * gain, into: &scrollRemainder.y)
+                    dx: quantized(mdx * gain, into: &scrollRemainder.x),
+                    dy: quantized(mdy * gain, into: &scrollRemainder.y)
                 ))
 
             case let .scrollEnd(velocityX, velocityY):
@@ -440,15 +467,25 @@ final class RemoteTrackpadModel: ObservableObject {
 
     // MARK: - Motion helpers
 
-    /// Rotates finger deltas for the orientation the user is holding. Landscape
-    /// assumes the phone's top points to the user's left.
+    /// Finger deltas feed the cursor in view coordinates, which always match
+    /// what the user sees: the page itself turns when a sideways hold is
+    /// chosen, so no rotation is applied. The one exception is the bottom
+    /// hold — iOS cannot display portrait upside down on a phone, so that one
+    /// rotates deltas in place while the page stays upright.
     private func mapped(dx: Double, dy: Double) -> (Double, Double) {
-        switch orientation {
-        case .portrait:
-            return (dx, dy)
-        case .landscape:
-            return (-dy, dx)
+        if orientation == .bottom && !sceneIsLandscape { return (-dx, -dy) }
+        return (dx, dy)
+    }
+
+    /// Whether the scene currently shows the page sideways. View coordinates
+    /// always line up with the visible page, so a sideways scene also lines
+    /// up with the user's hold.
+    private var sceneIsLandscape: Bool {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
+            return false
         }
+        return scene.interfaceOrientation.isLandscape
     }
 
     private func quantized(_ value: Double, into remainder: inout CGFloat) -> Double {

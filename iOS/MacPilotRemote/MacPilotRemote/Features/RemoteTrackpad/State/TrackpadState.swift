@@ -23,21 +23,25 @@ enum TrackpadPhase: Equatable {
     var isActiveLike: Bool { self == .active || self == .reconnecting }
 }
 
-/// Which way the user holds the phone. Deliberately not the system rotation:
-/// someone lying on a couch with the phone flat must not have the surface
-/// flip under their fingers when the gyroscope wakes up.
+/// Which way the phone is turned, named after the direction the top edge
+/// points — the same convention as iOS's landscape-left/right. Deliberately
+/// not the system rotation: someone lying on a couch with the phone flat must
+/// not have the surface flip under their fingers when the gyroscope wakes up.
+///
+/// The raw values are the original two hold names — stored preferences from
+/// earlier builds must keep decoding (`landscape` was the clockwise turn).
 enum TrackpadOrientation: String, CaseIterable {
-    /// Phone upright: screen right is cursor right.
-    case portrait
-    /// Phone sideways with its top to the user's left.
-    case landscape
+    /// Phone upright: the top edge is up.
+    case top = "portrait"
+    /// Phone turned to the left: the top edge points left.
+    case left = "left"
+    /// Phone upside down: the bottom edge is up.
+    case bottom = "bottom"
+    /// Phone turned to the right: the top edge points right.
+    case right = "landscape"
 
-    var iconSystemName: String {
-        switch self {
-        case .portrait: return "iphone"
-        case .landscape: return "iphone.landscape"
-        }
-    }
+    /// The sideways holds: the keyboard rotates to match these.
+    var isLandscape: Bool { self == .left || self == .right }
 }
 
 struct TrackpadSettings: Equatable {
@@ -68,7 +72,7 @@ struct TrackpadSettingsStore {
 
     var orientation: TrackpadOrientation {
         get {
-            defaults.string(forKey: Key.orientation).flatMap(TrackpadOrientation.init(rawValue:)) ?? .portrait
+            defaults.string(forKey: Key.orientation).flatMap(TrackpadOrientation.init(rawValue:)) ?? .top
         }
         set { defaults.set(newValue.rawValue, forKey: Key.orientation) }
     }

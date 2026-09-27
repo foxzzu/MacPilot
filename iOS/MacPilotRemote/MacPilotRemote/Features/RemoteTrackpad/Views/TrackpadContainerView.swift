@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The fullscreen trackpad page: a slim status strip, the surface, and a
-/// bottom row with orientation and settings.
+/// The fullscreen trackpad page: a slim status strip that carries the
+/// controls, and the surface with the four edge orientation arrows.
 ///
 /// Entering, the page scales up while rotating around Y — the card's back
 /// face becomes the trackpad. The whole exit runs in reverse and only then
@@ -22,9 +22,18 @@ struct TrackpadContainerView: View {
                 banner
                 TrackpadView(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay {
+                        TrackpadOrientationCompass(
+                            // While the page is sideways the lit arrow is the
+                            // window's top edge — the edge that is physically
+                            // up in the user's hold.
+                            orientation: model.orientation.isLandscape ? .top : model.orientation,
+                            onSelect: { model.setOrientation($0) },
+                            text: { appModel.text($0) }
+                        )
+                    }
                     .allowsHitTesting(model.phase.isActiveLike)
                     .accessibilityLabel(appModel.text("trackpadTitle"))
-                bottomBar
             }
             .padding(.top, 6)
             RemoteKeyboardInputView(model: model)
@@ -86,6 +95,32 @@ struct TrackpadContainerView: View {
                 }
             }
             Spacer(minLength: 8)
+            if model.keyboardActive {
+                Button {
+                    model.dismissKeyboard()
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.body.weight(.medium))
+                        .frame(width: 38, height: 34)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color(.tertiarySystemFill))
+                        )
+                }
+                .accessibilityLabel(appModel.text("trackpadHideKeyboard"))
+            }
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.body.weight(.medium))
+                    .frame(width: 38, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color(.tertiarySystemFill))
+                    )
+            }
+            .accessibilityLabel(appModel.text("trackpadSettings"))
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
@@ -181,38 +216,5 @@ struct TrackpadContainerView: View {
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
-    }
-
-    // MARK: - Bottom controls
-
-    private var bottomBar: some View {
-        HStack(spacing: 12) {
-            TrackpadOrientationPicker(model: model) { appModel.text($0) }
-            Spacer(minLength: 8)
-            if model.keyboardActive {
-                Button {
-                    model.dismissKeyboard()
-                } label: {
-                    Image(systemName: "keyboard.chevron.compact.down")
-                        .font(.body.weight(.medium))
-                        .frame(width: 44, height: 34)
-                }
-                .accessibilityLabel(appModel.text("trackpadHideKeyboard"))
-            }
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.body.weight(.medium))
-                    .frame(width: 44, height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color(.tertiarySystemFill))
-                    )
-            }
-            .accessibilityLabel(appModel.text("trackpadSettings"))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 }

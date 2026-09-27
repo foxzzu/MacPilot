@@ -175,8 +175,10 @@ enum RemoteText {
         "trackpadBluetoothHint": "蓝牙连接延迟较高，触控板体验会打折扣。",
         "trackpadUseWiFi": "改用 Wi-Fi",
         "trackpadOrientation": "握持方向",
-        "trackpadPortrait": "竖屏",
-        "trackpadLandscape": "横屏",
+        "trackpadOrientationTop": "顶边朝上",
+        "trackpadOrientationBottom": "底边朝上",
+        "trackpadOrientationLeft": "左边朝上",
+        "trackpadOrientationRight": "右边朝上",
         "trackpadSettings": "触控板设置",
         "trackpadTrackingSpeed": "跟踪速度",
         "trackpadNaturalScrolling": "自然滚动",
@@ -184,7 +186,7 @@ enum RemoteText {
         "trackpadScrollInertia": "滚动惯性",
         "trackpadDone": "完成",
         "trackpadHideKeyboard": "收起键盘",
-        "trackpadGesturesHint": "单指移动光标；轻点＝左键；在输入框上连点两下＝打开键盘，其他位置＝双击；轻点两下后按住＝拖动；双指滑动＝滚动；双指轻点＝右键。横屏时手机顶部朝左。",
+        "trackpadGesturesHint": "单指移动光标；轻点＝左键；在输入框上连点两下＝打开键盘，其他位置＝双击；轻点两下后按住＝拖动；双指滑动＝滚动；双指轻点＝右键。触控板四边的箭头切换握持方向，点亮的箭头是当前朝向。",
         "errorTextInputUnavailable": "Mac 上的输入框已失去焦点。",
     ]
 
@@ -335,8 +337,10 @@ enum RemoteText {
         "trackpadBluetoothHint": "Bluetooth adds lag; the trackpad works best over Wi-Fi.",
         "trackpadUseWiFi": "Use Wi-Fi",
         "trackpadOrientation": "Orientation",
-        "trackpadPortrait": "Portrait",
-        "trackpadLandscape": "Landscape",
+        "trackpadOrientationTop": "Top edge up",
+        "trackpadOrientationBottom": "Bottom edge up",
+        "trackpadOrientationLeft": "Left edge up",
+        "trackpadOrientationRight": "Right edge up",
         "trackpadSettings": "Trackpad Settings",
         "trackpadTrackingSpeed": "Tracking speed",
         "trackpadNaturalScrolling": "Natural scrolling",
@@ -344,7 +348,7 @@ enum RemoteText {
         "trackpadScrollInertia": "Scrolling inertia",
         "trackpadDone": "Done",
         "trackpadHideKeyboard": "Hide keyboard",
-        "trackpadGesturesHint": "One finger moves the cursor; tap = left click; double-tap on a text field = keyboard, elsewhere = double click; double-tap and hold = drag; two-finger slide = scroll; two-finger tap = right click. Landscape holds the phone's top to the left.",
+        "trackpadGesturesHint": "One finger moves the cursor; tap = left click; double-tap on a text field = keyboard, elsewhere = double click; double-tap and hold = drag; two-finger slide = scroll; two-finger tap = right click. The arrows on the trackpad edges switch the hold; the lit arrow is the current one.",
         "errorTextInputUnavailable": "The Mac text field lost focus.",
     ]
 }
