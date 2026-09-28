@@ -18,6 +18,7 @@
 		2A31139F8AA46E71787728F6 /* RemoteDesktopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7152877F9A213F21809D5A07 /* RemoteDesktopView.swift */; };
 		2A4D3DB2192AC62F75C6B89D /* RemoteAppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2664C90B50B85054CF47D9B3 /* RemoteAppModel.swift */; };
 		2D125F7F037A75EBFF60C57F /* TrackpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94F1B37F9E91D0638CF6DE1D /* TrackpadView.swift */; };
+		3653E921D16C12BABE7A2B41 /* RemoteConnectionRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECA729F7E430578837002D2 /* RemoteConnectionRetryTests.swift */; };
 		36BB935C02EC8519CE7DAFB1 /* PairedMacStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 448BBB633EBACB20D7BD15CB /* PairedMacStore.swift */; };
 		42668DE5A90C3F9737AD06C7 /* TrackpadContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D7C09D541D091153DBD26AA /* TrackpadContainerView.swift */; };
 		4565B7126473EB3C4AD8F9AA /* AccelerationCurve.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5AAC04F84819EBB0BDBC6B /* AccelerationCurve.swift */; };
@@ -103,6 +104,7 @@
 		88731EE963FEAFE686E6DAF3 /* TrackpadClickSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadClickSound.swift; sourceTree = "<group>"; };
 		8BADBB71C31CBC31DE93557E /* RemoteKeyboardInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteKeyboardInputView.swift; sourceTree = "<group>"; };
 		8D425482A5A46A96A727A35D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		8ECA729F7E430578837002D2 /* RemoteConnectionRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteConnectionRetryTests.swift; sourceTree = "<group>"; };
 		93EDD8D92E7229A2D55E777F /* MacPilotRemoteTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MacPilotRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		94F1B37F9E91D0638CF6DE1D /* TrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadView.swift; sourceTree = "<group>"; };
 		96FDC5169DB8CA6CDC1009EF /* RemoteDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiscoveryService.swift; sourceTree = "<group>"; };
@@ -309,6 +311,7 @@
 			isa = PBXGroup;
 			children = (
 				3774E27F2A76D7C23AFC2393 /* RemoteConnectionHandshakeTests.swift */,
+				8ECA729F7E430578837002D2 /* RemoteConnectionRetryTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -496,6 +499,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A285F69495332DCECE7A1F60 /* RemoteConnectionHandshakeTests.swift in Sources */,
+				3653E921D16C12BABE7A2B41 /* RemoteConnectionRetryTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

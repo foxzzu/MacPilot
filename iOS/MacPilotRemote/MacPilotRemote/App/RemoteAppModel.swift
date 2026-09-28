@@ -22,6 +22,17 @@ import UIKit
 /// racing and replace it only after completing their own authentication.
 @MainActor
 final class RemoteAppModel: ObservableObject {
+    static let handshakeRetryTimeout: TimeInterval = 15
+    static let dialRetryTimeout: TimeInterval = 4
+
+    static func shouldRetryHandshake(isTransportReady: Bool, startedAt: Date, now: Date) -> Bool {
+        isTransportReady && now.timeIntervalSince(startedAt) >= handshakeRetryTimeout
+    }
+
+    static func shouldRetryDial(isTransportReady: Bool, startedAt: Date, now: Date) -> Bool {
+        !isTransportReady && now.timeIntervalSince(startedAt) >= dialRetryTimeout
+    }
+
     struct PairingPrompt: Identifiable, Equatable {
         let id = UUID()
         let name: String
@@ -191,7 +202,8 @@ final class RemoteAppModel: ObservableObject {
     /// redialled — by then Bonjour usually has a fresh endpoint. A candidate
     /// whose transport is already up is never cut here: that one is mid
     /// handshake and cutting it would throw the attempt away.
-    private let connectAttemptTimeout: TimeInterval = 4
+    private let connectAttemptTimeout = RemoteAppModel.dialRetryTimeout
+    private let handshakeTimeout = RemoteAppModel.handshakeRetryTimeout
     private var isBLEDiagnosticRun: Bool {
         #if DEBUG
         ProcessInfo.processInfo.environment["MACPILOT_BLE_DIAGNOSTIC"] == "1"
@@ -538,7 +550,7 @@ final class RemoteAppModel: ObservableObject {
                 await pause(connectAttemptTimeout)
                 if Task.isCancelled { return }
                 for candidate in candidates where !candidate.manager.isTransportReady
-                    || Date().timeIntervalSince(candidate.startedAt) >= 15 {
+                    || Date().timeIntervalSince(candidate.startedAt) >= handshakeTimeout {
                     removeCandidate(candidate.manager)
                 }
                 await pause(connectRetryDelays.last ?? 5)
@@ -578,6 +590,18 @@ final class RemoteAppModel: ObservableObject {
                 // A transport that is up means a handshake is in flight. Give it
                 // as long as it needs: cutting it would throw the attempt away.
                 if candidates.contains(where: { $0.manager.isTransportReady }) {
+                    let now = Date()
+                    let stalled = candidates.filter {
+                        $0.manager.isTransportReady
+                            && now.timeIntervalSince($0.startedAt) >= handshakeTimeout
+                    }
+                    if !stalled.isEmpty {
+                        for candidate in stalled {
+                            raceLog("handshake timeout for \(candidate.path.rawValue); retrying")
+                            removeCandidate(candidate.manager)
+                        }
+                        continue
+                    }
                     await pause(0.2)
                     continue
                 }
