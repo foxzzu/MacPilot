@@ -17,7 +17,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for attempt in {1..60}; do
+          for attempt in {1..180}; do
             main_run="$(gh run list \
               --repo "$GITHUB_REPOSITORY" \
               --workflow build.yml \
@@ -26,7 +26,7 @@ jobs:
               --limit 20 \
               --jq '[.[] | select(.headBranch == "main")] | first')"
             if [[ -z "$main_run" || "$main_run" == "null" ]]; then
-              echo "Waiting for the main-branch run for $GITHUB_SHA ($attempt/30)"
+              echo "Waiting for the main-branch run for $GITHUB_SHA ($attempt/180)"
               sleep 10
               continue
             fi
@@ -34,7 +34,7 @@ jobs:
             status="$(jq -r '.status' <<<"$main_run")"
             conclusion="$(jq -r '.conclusion // empty' <<<"$main_run")"
             if [[ "$status" != "completed" ]]; then
-              echo "Main-branch validation is still $status ($attempt/30)"
+              echo "Main-branch validation is still $status ($attempt/180)"
               sleep 10
               continue
             fi

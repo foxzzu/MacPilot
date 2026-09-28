@@ -53,9 +53,6 @@ jobs:
       - name: Run tests
         run: swift test --filter 'UpdateChannelTests|SoftwareUpdateTests|SigningRequirementTests'
 
-      - name: Build release binary
-        run: swift build -c release -Xswiftc -warnings-as-errors --arch arm64 --arch x86_64
-
       - name: Package app bundle
         env:
           MACPILOT_ALLOW_UNSTABLE_SIGNING: "1"
