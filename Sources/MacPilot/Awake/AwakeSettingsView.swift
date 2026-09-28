@@ -30,7 +30,6 @@ struct AwakeSettingsView: View {
     @ObservedObject var profiles: AwakeProfileStore
 
     @State private var isSessionProtectionSheetPresented = false
-    @State private var isSaveProfileSheetPresented = false
     @State private var editingProfile: AwakeSessionProfile?
     @State private var isProfileEditorPresented = false
     @State private var profilePendingDeletion: AwakeSessionProfile?
@@ -62,12 +61,6 @@ struct AwakeSettingsView: View {
         .sheet(isPresented: $isSessionProtectionSheetPresented) {
             AwakeSessionProtectionSheet(awake: awake, profiles: profiles)
                 .environmentObject(model)
-        }
-        .sheet(isPresented: $isSaveProfileSheetPresented) {
-            AwakeProfileSaveSheet(profiles: profiles) {
-                AwakeSessionProfileConfiguration.capture(from: awake.settings)
-            }
-            .environmentObject(model)
         }
         .sheet(isPresented: $isProfileEditorPresented) {
             if let editingProfile {
@@ -192,9 +185,6 @@ struct AwakeSettingsView: View {
                     isSessionProtectionSheetPresented = true
                 }
                 .macPilotProminentButtonStyle()
-                Button(model.t("awakeSaveProfile")) {
-                    isSaveProfileSheetPresented = true
-                }
                 if awake.hasInteractiveSession {
                     Button(model.t("awakeStop"), action: awake.endAllInteractiveSessions)
                 }
@@ -598,6 +588,7 @@ private struct AwakeSessionProtectionSheet: View {
     @ObservedObject var profiles: AwakeProfileStore
 
     @State private var draft = AwakeSessionProtectionDraft()
+    @State private var isSaveProfileSheetPresented = false
 
     init(awake: AwakeSessionManager, profiles: AwakeProfileStore) {
         self.awake = awake
@@ -632,6 +623,9 @@ private struct AwakeSessionProtectionSheet: View {
                 Button(model.t("cancel")) {
                     dismiss()
                 }
+                Button(model.t("awakeSaveProfile")) {
+                    isSaveProfileSheetPresented = true
+                }
                 Button(model.t("awakeSessionProtectionConfirm")) {
                     confirm()
                 }
@@ -641,6 +635,14 @@ private struct AwakeSessionProtectionSheet: View {
             .padding(.vertical, 16)
         }
         .frame(minWidth: 520, idealWidth: 560, minHeight: 580, idealHeight: 660)
+        .sheet(isPresented: $isSaveProfileSheetPresented) {
+            // 保存方案在第二步：把弹窗里确认前的完整配置（含本页保护选项）
+            // 存为方案，保存后这一步也一并收起。
+            AwakeProfileSaveSheet(profiles: profiles, onSaved: { dismiss() }) {
+                draftConfiguration()
+            }
+            .environmentObject(model)
+        }
         .onAppear {
             // 从当前设置初始化：弹窗展示的就是已保存的选项，确认时原样写回，
             // 未触碰的项不会因为重新打开弹窗而被重置。
@@ -736,6 +738,18 @@ private struct AwakeSessionProtectionSheet: View {
             .font(.subheadline)
             .fontWeight(.semibold)
             .padding(.top, 2)
+    }
+
+    /// 「保存方案」用的完整配置：第一步取全局当前值，第二步用本弹窗里
+    /// 确认前的草稿值覆盖保护选项——保存的就是屏幕上看到的这套配置。
+    private func draftConfiguration() -> AwakeSessionProfileConfiguration {
+        var configuration = AwakeSessionProfileConfiguration.capture(from: awake.settings)
+        configuration.lowBatteryProtectionEnabled = draft.safetyPolicy.lowBatteryProtectionEnabled
+        configuration.minimumBatteryLevel = draft.safetyPolicy.minimumBatteryLevel
+        configuration.warnBeforeBatteryTermination = draft.warnBeforeBatteryTermination
+        configuration.ignoreBatteryLevelOnExternalPower = draft.ignoreBatteryLevelOnExternalPower
+        configuration.restartOnPowerReconnect = draft.restartOnPowerReconnect
+        return configuration
     }
 
     private var batteryProtectionBinding: Binding<Bool> {
@@ -879,11 +893,23 @@ private struct AwakeProfileRowView: View {
 }
 
 /// 保存方案弹窗：命名当前配置。同名时先确认再覆盖。
+/// `onSaved` 在成功保存（新建或覆盖）后回调，供承载它的第二步弹窗收起自己。
 private struct AwakeProfileSaveSheet: View {
     @EnvironmentObject private var model: MacPilotModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var profiles: AwakeProfileStore
     let makeConfiguration: () -> AwakeSessionProfileConfiguration
+    var onSaved: (() -> Void)?
+
+    init(
+        profiles: AwakeProfileStore,
+        onSaved: (() -> Void)? = nil,
+        makeConfiguration: @escaping () -> AwakeSessionProfileConfiguration
+    ) {
+        self.profiles = profiles
+        self.onSaved = onSaved
+        self.makeConfiguration = makeConfiguration
+    }
 
     @State private var name = ""
     @State private var pendingOverwrite: AwakeSessionProfile?
@@ -944,12 +970,14 @@ private struct AwakeProfileSaveSheet: View {
             return
         }
         profiles.create(name: trimmedName, configuration: makeConfiguration())
+        onSaved?()
         dismiss()
     }
 
     private func overwrite() {
         guard let existing = pendingOverwrite else { return }
         profiles.overwriteConfiguration(of: existing.id, with: makeConfiguration())
+        onSaved?()
         dismiss()
     }
 }
