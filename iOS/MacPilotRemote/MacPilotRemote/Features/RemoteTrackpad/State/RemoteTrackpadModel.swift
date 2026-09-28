@@ -471,6 +471,12 @@ final class RemoteTrackpadModel: ObservableObject {
     private static let keyboardProbeDelay = Duration.milliseconds(120)
 
     func requestKeyboard(focused: Bool = false) {
+        if focused {
+            // A manual request takes precedence over an in-flight automatic
+            // pointer probe, which may be about to reject a WebView container.
+            keyboardRequestTask?.cancel()
+            keyboardRequestTask = nil
+        }
         guard !keyboardActive, keyboardRequestTask == nil, let appModel else { return }
         keyboardRequestTask = Task { [weak self] in
             try? await Task.sleep(for: Self.keyboardProbeDelay)
@@ -480,8 +486,8 @@ final class RemoteTrackpadModel: ObservableObject {
             guard !Task.isCancelled else { return }
             let accepted = await appModel.beginTextInput(focused: focused)
             guard let self else { return }
-            self.keyboardRequestTask = nil
             guard self.phase == .active, !Task.isCancelled else { return }
+            self.keyboardRequestTask = nil
             if accepted {
                 self.textInputEpoch += 1
                 self.keyboardActive = true

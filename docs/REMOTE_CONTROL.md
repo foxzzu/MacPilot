@@ -152,6 +152,21 @@ Dismissal and leaving the trackpad send `endTextInput`; disconnect also clears
 the Mac's per-connection target. This feature needs the Mac's Accessibility
 grant. Custom controls that do not expose a standard editable Accessibility
 role or do not accept Unicode keyboard events may not support remote typing.
+Focus is resolved through the foreground application's Accessibility object,
+because Electron apps can fail the system-wide focused-element query. If a
+WebView hit-test returns a surrounding container instead of its editable child,
+the already-focused editable field can be used only when it belongs to the
+hit-tested process and its screen bounds contain the pointer. Clicking outside
+that field cannot reopen the keyboard through this fallback. Focused text
+descendants are normalized to their editable ancestor before each operation.
+The trackpad's keyboard button is always visible (disabled while disconnected).
+It opens or dismisses the keyboard. Opening sends the existing focused-mode
+`beginTextInput` payload `0x01` over any authenticated, armed input connection,
+including Bluetooth; no video session is required. This explicit typing intent
+can bind a custom editor without a standard editable AX role, while automatic
+tap probes still require one. Each operation must still match the pinned
+foreground focus. Older Macs may reject the explicit request or use their
+existing pointer-based detection, without any new command or frame format.
 While the phone keyboard is open, a trackpad click rechecks the pointer's Mac
 Accessibility target after sending the click. Clicking ordinary content closes
 the phone keyboard; clicking another editable field keeps it open and binds

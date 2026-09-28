@@ -539,7 +539,7 @@ final class RemoteConnection: Identifiable {
         let success: Bool
         switch request.command {
         case .beginTextInput:
-            success = host.inputCoordinator.beginTextInput(connectionID: id, focused: request.payload == Data([1]) && videoSession != nil)
+            success = host.inputCoordinator.beginTextInput(connectionID: id, focused: request.payload == Data([1]))
         case .textInput:
             guard let operation = try? RemoteTextInputOperation.decoded(from: request.payload) else {
                 return RemoteResponse(requestID: request.requestID, success: false,

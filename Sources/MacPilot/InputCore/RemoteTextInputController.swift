@@ -9,26 +9,12 @@ import MacPilotRemoteProtocol
 final class RemoteTextInputController {
     private var targets: [UUID: AXUIElement] = [:]
     private let source = CGEventSource(stateID: .hidSystemState)
+    private let targetResolver = RemoteTextInputTargetResolver(accessibility: SystemRemoteTextInputAccessibility())
 
     func begin(connectionID: UUID, focused: Bool = false) -> Bool {
         targets.removeValue(forKey: connectionID)
         guard AXIsProcessTrusted(), let point = CGEvent(source: source)?.location else { return false }
-        let system = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(system, 0.25)
-        var raw: AXUIElement?
-        if focused {
-            var value: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &value) == .success,
-                  let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return false }
-            raw = unsafeDowncast(value, to: AXUIElement.self)
-        } else {
-            guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &raw) == .success else { return false }
-        }
-        guard let raw, let target = editableAncestor(of: raw) else { return false }
-        if !isFocused(target, system: system) {
-            _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue!)
-        }
-        guard isFocused(target, system: system) else { return false }
+        guard let target = targetResolver.begin(at: point, focused: focused) else { return false }
         targets[connectionID] = target
         return true
     }
@@ -39,9 +25,7 @@ final class RemoteTextInputController {
 
     func handle(_ operation: RemoteTextInputOperation, connectionID: UUID) -> Bool {
         guard let target = targets[connectionID], AXIsProcessTrusted() else { return false }
-        let system = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(system, 0.25)
-        guard isFocused(target, system: system) else {
+        guard targetResolver.isFocused(target) else {
             end(connectionID: connectionID)
             return false
         }
@@ -55,40 +39,11 @@ final class RemoteTextInputController {
         }
     }
 
-    private func editableAncestor(of element: AXUIElement) -> AXUIElement? {
-        var current: AXUIElement? = element
-        for _ in 0..<8 {
-            guard let candidate = current else { break }
-            var roleValue: CFTypeRef?
-            var editableValue: CFTypeRef?
-            var enabledValue: CFTypeRef?
-            _ = AXUIElementCopyAttributeValue(candidate, kAXRoleAttribute as CFString, &roleValue)
-            _ = AXUIElementCopyAttributeValue(candidate, kAXIsEditableAttribute as CFString, &editableValue)
-            _ = AXUIElementCopyAttributeValue(candidate, kAXEnabledAttribute as CFString, &enabledValue)
-            if let role = roleValue as? String,
-               Self.isEditableRole(role, editable: editableValue as? Bool, enabled: enabledValue as? Bool) {
-                return candidate
-            }
-            var parentValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(candidate, kAXParentAttribute as CFString, &parentValue) == .success,
-                  let parentValue, CFGetTypeID(parentValue) == AXUIElementGetTypeID() else { break }
-            current = unsafeDowncast(parentValue, to: AXUIElement.self)
-        }
-        return nil
-    }
-
     static func isEditableRole(_ role: String, editable: Bool?, enabled: Bool?) -> Bool {
         guard enabled != false, editable != false else { return false }
         return role == kAXTextFieldRole as String
             || role == kAXTextAreaRole as String
             || (role == kAXComboBoxRole as String && editable == true)
-    }
-
-    private func isFocused(_ target: AXUIElement, system: AXUIElement) -> Bool {
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return false }
-        return CFEqual(focused, target)
     }
 
     private func postText(_ text: String) -> Bool {
