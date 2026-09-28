@@ -1,0 +1,139 @@
+name: Signed release pipeline
+on:
+  workflow_call:
+    inputs:
+      channel:
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release-gate:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful main-branch validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in {1..60}; do
+            main_run="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow build.yml \
+              --commit "$GITHUB_SHA" \
+              --json databaseId,headBranch,status,conclusion \
+              --limit 20 \
+              --jq '[.[] | select(.headBranch == "main")] | first')"
+            if [[ -z "$main_run" || "$main_run" == "null" ]]; then
+              echo "Waiting for the main-branch run for $GITHUB_SHA ($attempt/30)"
+              sleep 10
+              continue
+            fi
+
+            status="$(jq -r '.status' <<<"$main_run")"
+            conclusion="$(jq -r '.conclusion // empty' <<<"$main_run")"
+            if [[ "$status" != "completed" ]]; then
+              echo "Main-branch validation is still $status ($attempt/30)"
+              sleep 10
+              continue
+            fi
+            if [[ "$conclusion" == "success" ]]; then
+              echo "Main-branch validation passed for $GITHUB_SHA"
+              exit 0
+            fi
+
+            echo "Main-branch validation finished with conclusion: $conclusion"
+            exit 1
+          done
+
+          echo "Timed out waiting for main-branch validation"
+          exit 1
+
+  dist:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.release-gate.result == 'success' }}
+    needs: release-gate
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode 26.3
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.3"
+
+      - name: Import Developer ID signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Resolve app version
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 Scripts/generate-build-info.py "$version" "${{ inputs.channel }}" --validate-only
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "MACPILOT_VERSION=$version" >> "$GITHUB_ENV"
+          if [[ "${GITHUB_REF_NAME}" == "v1.1.20" ]]; then
+            echo "bridge=1" >> "$GITHUB_OUTPUT"
+            echo "archive_prefix=OctoPilot" >> "$GITHUB_OUTPUT"
+            echo "bundle_identifier=com.misswell.octopilot" >> "$GITHUB_OUTPUT"
+          else
+            echo "bridge=0" >> "$GITHUB_OUTPUT"
+            echo "archive_prefix=MacPilot" >> "$GITHUB_OUTPUT"
+            echo "bundle_identifier=com.misswell.macpilot" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign, notarize, staple, and package both architectures
+        env:
+          MACPILOT_CHANNEL: ${{ inputs.channel }}
+          MACPILOT_BRIDGE: ${{ steps.version.outputs.bridge }}
+          MACPILOT_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          MACPILOT_APPLE_ID: ${{ secrets.APPLE_ID }}
+          MACPILOT_APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MACPILOT_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for architecture in arm64 x86_64; do
+            echo "==> Creating $architecture distributable"
+            MACPILOT_ARCHS="$architecture" ./Scripts/distribute-app.sh
+          done
+
+      - name: Create notarized universal DMG
+        env:
+          MACPILOT_CHANNEL: ${{ inputs.channel }}
+          MACPILOT_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          MACPILOT_APPLE_ID: ${{ secrets.APPLE_ID }}
+          MACPILOT_APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MACPILOT_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ./Scripts/distribute-app.sh
+          ./Scripts/build-dmg.sh
+
+      - name: Verify the published designated requirement
+        run: |
+          set -euo pipefail
+          for architecture in arm64 x86_64; do
+            ./Scripts/verify-signing-requirement.sh \
+              "${{ steps.version.outputs.archive_prefix }}-${{ steps.version.outputs.version }}-${architecture}-macos.zip" \
+              "${{ steps.version.outputs.bundle_identifier }}"
+          done
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          flags=(--latest)
+          if [[ "${{ inputs.channel }}" == "beta" ]]; then
+            flags=(--prerelease --latest=false)
+          fi
+          gh release create "${{ github.ref_name }}" \
+            --verify-tag --title "MacPilot ${{ github.ref_name }}" --generate-notes "${flags[@]}" \
+            "${{ steps.version.outputs.archive_prefix }}-${{ steps.version.outputs.version }}-arm64-macos.zip#MacPilot for Apple Silicon" \
+            "${{ steps.version.outputs.archive_prefix }}-${{ steps.version.outputs.version }}-x86_64-macos.zip#MacPilot for Intel" \
+            "MacPilot-${{ steps.version.outputs.version }}.dmg#MacPilot installer"

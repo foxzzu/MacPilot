@@ -21,6 +21,10 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
+	<key>MacPilotVersion</key>
+	<string>1.0.0</string>
+	<key>MacPilotUpdateChannel</key>
+	<string>stable</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFBundleURLTypes</key>

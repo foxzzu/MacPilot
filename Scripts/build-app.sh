@@ -26,6 +26,17 @@ for arch in "${ARCHS[@]}"; do
     PATCH_ARCH_ARGS+=(-arch "$arch")
 done
 
+VERSION="${MACPILOT_VERSION:-${OCTOPILOT_VERSION:-$("$ROOT/Scripts/version.sh")}}"
+CHANNEL="${MACPILOT_CHANNEL:-stable}"
+BUNDLE_VERSION="${VERSION%%-*}"
+# Validate the explicit build identity before compiling or changing any bundle.
+python3 "$ROOT/Scripts/generate-build-info.py" "$VERSION" "$CHANNEL" --validate-only
+BUILD_INFO="$ROOT/Sources/MacPilot/Core/BuildInfo.swift"
+BUILD_INFO_BACKUP="$(mktemp)"
+cp "$BUILD_INFO" "$BUILD_INFO_BACKUP"
+trap 'cp "$BUILD_INFO_BACKUP" "$BUILD_INFO"; rm -f "$BUILD_INFO_BACKUP"' EXIT
+python3 "$ROOT/Scripts/generate-build-info.py" "$VERSION" "$CHANNEL" "$BUILD_INFO"
+
 # Keep local packaging under the same strict Swift concurrency diagnostics as
 # the signed CI release. This prevents a warning on one toolchain from becoming
 # a late compile failure after the commit has already been tagged.
@@ -56,7 +67,6 @@ xcrun clang -dynamiclib -O2 "${PATCH_ARCH_ARGS[@]}" \
     -install_name @loader_path/libMacPilotOcclusionPatch.dylib \
     Sources/MacPilotOcclusionPatch/MacPilotOcclusionPatch.m \
     -o "$OCCLUSION_PATCH_BIN"
-VERSION="${MACPILOT_VERSION:-${OCTOPILOT_VERSION:-$("$ROOT/Scripts/version.sh")}}"
 BUILD_NUMBER="${MACPILOT_BUILD_NUMBER:-${OCTOPILOT_BUILD_NUMBER:-$(git rev-list --count HEAD)}}"
 
 BRIDGE_MODE="${MACPILOT_BRIDGE:-${OCTOPILOT_BRIDGE:-0}}"
@@ -103,9 +113,11 @@ REXT_APPEX="$APP/Contents/PlugIns/FinderSync.appex"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName MacPilot" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_EXECUTABLE_NAME" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_IDENTIFIER" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :MacPilotVersion $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :MacPilotUpdateChannel $CHANNEL" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$REXT_APPEX/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_VERSION" "$REXT_APPEX/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$REXT_APPEX/Contents/Info.plist"
 ENTITLEMENTS="$ROOT/Resources/MacPilot.entitlements"
 DEVELOPER_ID="${MACPILOT_DEVELOPER_ID:-${OCTOPILOT_DEVELOPER_ID:-}}"

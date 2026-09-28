@@ -68,6 +68,7 @@ struct SigningRequirementTests {
         let build = try script("Scripts/build-app.sh")
         let distribute = try script("Scripts/distribute-app.sh")
         let workflow = try script(".github/workflows/build.yml")
+        let releaseWorkflow = try script(".github/workflows/release-common.yml")
         let verifier = try script("Scripts/verify-signing-requirement.sh")
 
         // Every path that can produce a package hands it to the verifier, and
@@ -76,6 +77,7 @@ struct SigningRequirementTests {
         #expect(build.contains("verify-signing-requirement.sh"))
         #expect(distribute.contains("verify-signing-requirement.sh"))
         #expect(workflow.contains("verify-signing-requirement.sh"))
+        #expect(releaseWorkflow.contains("verify-signing-requirement.sh"))
         #expect(verifier.contains(#"source "$ROOT/Scripts/signing-requirement.sh""#))
 
         // No signing path may fall back to a requirement codesign derived by

@@ -1,0 +1,14 @@
+name: Release Beta
+on:
+  push:
+    tags: ["v[0-9]*.[0-9]*.[0-9]*-beta.[0-9]*"]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    if: ${{ contains(github.ref_name, '-beta.') }}
+    uses: ./.github/workflows/release-common.yml
+    with:
+      channel: beta
+    secrets: inherit

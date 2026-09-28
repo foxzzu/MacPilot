@@ -2,50 +2,13 @@ import AppKit
 import CryptoKit
 import Foundation
 
-struct SoftwareVersion: Comparable, Hashable, CustomStringConvertible {
-    private let components: [Int]
-
-    init?(_ value: String) {
-        let normalized = value.hasPrefix("v") ? String(value.dropFirst()) : value
-        let pieces = normalized.split(separator: ".", omittingEmptySubsequences: false)
-        guard !pieces.isEmpty,
-              pieces.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }),
-              pieces.compactMap({ Int($0) }).count == pieces.count else { return nil }
-        components = pieces.compactMap { Int($0) }
-    }
-
-    var description: String { components.map(String.init).joined(separator: ".") }
-
-    static func == (lhs: SoftwareVersion, rhs: SoftwareVersion) -> Bool {
-        normalized(lhs.components) == normalized(rhs.components)
-    }
-
-    static func < (lhs: SoftwareVersion, rhs: SoftwareVersion) -> Bool {
-        let count = max(lhs.components.count, rhs.components.count)
-        for index in 0..<count {
-            let left = index < lhs.components.count ? lhs.components[index] : 0
-            let right = index < rhs.components.count ? rhs.components[index] : 0
-            if left != right { return left < right }
-        }
-        return false
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(Self.normalized(components))
-    }
-
-    private static func normalized(_ components: [Int]) -> [Int] {
-        var result = components
-        while result.count > 1 && result.last == 0 { result.removeLast() }
-        return result
-    }
-}
-
 struct SoftwareRelease: Equatable {
     let version: SoftwareVersion
     let releaseNotes: String
     let archiveURL: URL
     let sha256: String
+    var isPrerelease: Bool = false
+    var publishedAt: Date? = nil
 
     func isNewer(than currentVersion: String) -> Bool {
         guard let current = SoftwareVersion(currentVersion) else { return false }
@@ -54,11 +17,18 @@ struct SoftwareRelease: Equatable {
 
     static func decodeGitHubResponse(
         _ data: Data,
-        architecture: AppArchitecture = .current
+        architecture: AppArchitecture = .current,
+        channel: AppChannel = .stable
     ) throws -> SoftwareRelease {
         let response = try JSONDecoder().decode(GitHubReleaseResponse.self, from: data)
-        guard !response.draft, !response.prerelease,
-              let version = SoftwareVersion(response.tagName) else {
+        return try decode(response, architecture: architecture, channel: channel)
+    }
+
+    static func decode(_ response: GitHubReleaseResponse, architecture: AppArchitecture, channel: AppChannel) throws -> SoftwareRelease {
+        guard !response.draft, response.prerelease == (channel == .beta),
+              let version = SoftwareVersion(response.tagName),
+              version.isPrerelease == response.prerelease,
+              channel != .beta || version.prerelease.first == "beta" else {
             throw SoftwareUpdateError.invalidRelease
         }
         let expectedNames = AppIdentity.archiveNames(
@@ -85,9 +55,11 @@ struct SoftwareRelease: Equatable {
         }
         return SoftwareRelease(
             version: version,
-            releaseNotes: response.body,
+            releaseNotes: response.body ?? "",
             archiveURL: asset.url,
-            sha256: sha256
+            sha256: sha256,
+            isPrerelease: response.prerelease,
+            publishedAt: response.publishedAt.flatMap { ISO8601DateFormatter().date(from: $0) }
         )
     }
 
@@ -99,7 +71,7 @@ struct SoftwareRelease: Equatable {
         tagName: String,
         architecture: AppArchitecture = .current
     ) throws -> SoftwareRelease {
-        guard let version = SoftwareVersion(tagName) else {
+        guard let version = SoftwareVersion(tagName), !version.isPrerelease else {
             throw SoftwareUpdateError.invalidRelease
         }
         let expectedNames = AppIdentity.archiveNames(
@@ -151,7 +123,7 @@ enum SoftwareUpdateError: Error, Equatable {
     case commandFailed(String)
 }
 
-private struct GitHubReleaseResponse: Decodable {
+struct GitHubReleaseResponse: Decodable {
     struct Asset: Decodable {
         let name: String
         let url: URL
@@ -165,10 +137,11 @@ private struct GitHubReleaseResponse: Decodable {
     }
 
     let tagName: String
-    let body: String
+    let body: String?
     let draft: Bool
     let prerelease: Bool
     let assets: [Asset]
+    let publishedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
@@ -176,6 +149,7 @@ private struct GitHubReleaseResponse: Decodable {
         case draft
         case prerelease
         case assets
+        case publishedAt = "published_at"
     }
 }
 
@@ -263,6 +237,8 @@ final class SoftwareUpdater: ObservableObject {
 
     @Published private(set) var state: SoftwareUpdateState = .idle
     let currentVersion: String
+    private(set) var channel: AppChannel = .stable
+    private var channelRevision = 0
 
     private let session: URLSession
     private let applicationURL: URL
@@ -277,13 +253,24 @@ final class SoftwareUpdater: ObservableObject {
         self.applicationURL = applicationURL
     }
 
+    func setChannel(_ channel: AppChannel) {
+        guard self.channel != channel else { return }
+        self.channel = channel
+        channelRevision += 1
+        if state.activity != .downloading && state.activity != .installing { state = .idle }
+    }
+
     func checkForUpdates() async {
         guard !state.isBusy else { return }
         state = .checking
+        let revision = channelRevision
+        let requestedChannel = channel
         do {
-            let release = try await fetchLatestRelease()
-            state = release.isNewer(than: currentVersion) ? .available(release) : .upToDate
+            let release = try await fetchLatestRelease(channel: requestedChannel)
+            guard revision == channelRevision else { return }
+            state = release.map { $0.isNewer(than: currentVersion) ? .available($0) : .upToDate } ?? .upToDate
         } catch {
+            guard revision == channelRevision else { return }
             state = .failed(SoftwareUpdateFailure(error))
         }
     }
@@ -321,7 +308,10 @@ final class SoftwareUpdater: ObservableObject {
         }
     }
 
-    private func fetchLatestRelease() async throws -> SoftwareRelease {
+    private func fetchLatestRelease(channel: AppChannel) async throws -> SoftwareRelease? {
+        if channel == .beta {
+            return try await ReleaseFetcher.fetchBeta(session: session, currentVersion: currentVersion)
+        }
         var request = URLRequest(url: Self.latestReleaseURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("MacPilot/\(currentVersion)", forHTTPHeaderField: "User-Agent")
@@ -523,8 +513,8 @@ enum UpdatePackageValidator {
                       .contains(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
                 throw SoftwareUpdateError.invalidApplication
             }
-            let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            guard version.flatMap(SoftwareVersion.init) == release.version else {
+            let version = AppVersionInfo.current(bundle: bundle).version
+            guard SoftwareVersion(version) == release.version else {
                 throw SoftwareUpdateError.versionMismatch
             }
 

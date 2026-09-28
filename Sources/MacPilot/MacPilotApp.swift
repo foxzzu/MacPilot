@@ -20,6 +20,18 @@ struct MacPilotApp: App {
             MainWindowRoot().environmentObject(model)
         }
         .windowToolbarStyle(.unified(showsTitle: false))
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button(model.t("aboutMacPilot")) {
+                    NSApp.orderFrontStandardAboutPanel(options: [
+                        .applicationVersion: AppVersionInfo.current().version,
+                        .credits: NSAttributedString(string: model.t(
+                            AppChannel.installed() == .stable ? "installedStableChannel" : "installedBetaChannel"
+                        ))
+                    ])
+                }
+            }
+        }
 
         MenuBarExtra {
             MenuBarView(
@@ -143,7 +155,9 @@ struct AppVersionInfo: Equatable {
 
     static func current(bundle: Bundle = .main) -> AppVersionInfo {
         AppVersionInfo(
-            version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—",
+            version: (bundle.object(forInfoDictionaryKey: "MacPilotVersion") as? String)
+                ?? (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+                ?? BuildInfo.version,
             build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
         )
     }
@@ -618,6 +632,10 @@ enum AppText {
         "inputSourcesDomainSuffix": "域名后缀", "inputSourcesDomain": "精确域名", "inputSourcesURLRegex": "URL 正则",
         "inputSourcesRuleValue": "域名或 URL 模式",
         "bleSortBy": "排序", "bleSortAdded": "加载顺序", "bleSortName": "名称", "bleSortSignal": "信号",
+        "aboutMacPilot": "关于 MacPilot", "updateChannel": "更新通道", "stableChannel": "正式版", "betaChannel": "开发版",
+        "stableChannelHint": "仅接收稳定版本更新", "betaChannelHint": "提前体验新功能，可能存在稳定性问题",
+        "switchBetaTitle": "切换到开发版？", "switchBetaBody": "开发版包含正在测试中的功能，可能存在未知问题。是否继续？", "switchChannel": "切换",
+        "installedStableChannel": "Stable Channel · 正式版", "installedBetaChannel": "Beta Channel · 开发版",
         "softwareUpdate": "软件更新", "updateDescription": "从 GitHub Releases 检查经过签名和 Apple 公证的新版本。",
         "automaticUpdateChecks": "自动检查更新", "automaticUpdateChecksHint": "关闭后启动时不会发出任何网络请求，只能手动点击「检查更新…」。",
         "checkForUpdates": "检查更新…", "checkingForUpdates": "正在检查更新…", "upToDate": "已是最新版本。",
@@ -1554,6 +1572,10 @@ enum AppText {
             "inputSourcesDomainSuffix": "Domain suffix", "inputSourcesDomain": "Exact domain", "inputSourcesURLRegex": "URL regex",
             "inputSourcesRuleValue": "Domain or URL pattern",
             "bleSortBy": "Sort", "bleSortAdded": "Added", "bleSortName": "Name", "bleSortSignal": "Signal",
+            "aboutMacPilot": "About MacPilot", "updateChannel": "Update channel", "stableChannel": "Stable", "betaChannel": "Beta",
+            "stableChannelHint": "Receive stable updates only", "betaChannelHint": "Try new features early; stability issues may occur",
+            "switchBetaTitle": "Switch to Beta?", "switchBetaBody": "Beta builds include features still being tested and may contain unknown issues. Continue?", "switchChannel": "Switch",
+            "installedStableChannel": "Stable Channel", "installedBetaChannel": "Beta Channel",
             "softwareUpdate": "Software Update", "updateDescription": "Check GitHub Releases for versions signed and notarized by Apple.",
             "automaticUpdateChecks": "Check for updates automatically", "automaticUpdateChecksHint": "When off, launch makes no network request; use \"Check for Updates…\" instead.",
             "checkForUpdates": "Check for Updates…", "checkingForUpdates": "Checking for updates…", "upToDate": "MacPilot is up to date.",
@@ -1778,6 +1800,7 @@ final class MacPilotModel: ObservableObject {
         /// Automatic update checks. Off means no request is issued at launch and
         /// the manual "Check for Updates" button is the only path.
         var automaticUpdateChecks: Bool
+        var updateChannel: AppChannel
         var bleUnlock: BLEUnlockSettings
         var fileCompression: FolderCompressionSettings
 
@@ -1801,14 +1824,14 @@ final class MacPilotModel: ObservableObject {
         private enum CodingKeys: String, CodingKey {
             case version, enabledFeatures, rules, isEnforcing, language
             case launchRules, isLaunchSchedulingEnabled, launchesAtLogin
-            case lastScheduledBootSession, automaticUpdateChecks
+            case lastScheduledBootSession, automaticUpdateChecks, updateChannel
             case bleUnlock, fileCompression
             case screenCapture, screenRecording, pictureInPicture
             case inputSources, windowSwitcher, smoothScrolling, clipboard
             case awake, awakeTriggers, awakeProfiles, remoteControl, dockGroups
         }
 
-        init(enabledFeatures: Set<MainSection>, rules: [QuitRule], isEnforcing: Bool, language: AppLanguage, launchRules: [LaunchRule], isLaunchSchedulingEnabled: Bool, launchesAtLogin: Bool, lastScheduledBootSession: String?, automaticUpdateChecks: Bool, bleUnlock: BLEUnlockSettings, fileCompression: FolderCompressionSettings, screenCapture: ScreenCaptureSettings, screenRecording: ScreenRecordingSettings, pictureInPicture: PictureInPictureSettings, inputSources: InputSourceSettings, windowSwitcher: WindowSwitcherSettings, smoothScrolling: SmoothScrollSettings, clipboard: ClipboardSettings, awake: AwakeSettings, awakeTriggers: [AwakeTrigger], awakeProfiles: [AwakeSessionProfile], remoteControl: RemoteControlSettings, dockGroups: DockGroupsSettings) {
+        init(enabledFeatures: Set<MainSection>, rules: [QuitRule], isEnforcing: Bool, language: AppLanguage, launchRules: [LaunchRule], isLaunchSchedulingEnabled: Bool, launchesAtLogin: Bool, lastScheduledBootSession: String?, automaticUpdateChecks: Bool, updateChannel: AppChannel = .stable, bleUnlock: BLEUnlockSettings, fileCompression: FolderCompressionSettings, screenCapture: ScreenCaptureSettings, screenRecording: ScreenRecordingSettings, pictureInPicture: PictureInPictureSettings, inputSources: InputSourceSettings, windowSwitcher: WindowSwitcherSettings, smoothScrolling: SmoothScrollSettings, clipboard: ClipboardSettings, awake: AwakeSettings, awakeTriggers: [AwakeTrigger], awakeProfiles: [AwakeSessionProfile], remoteControl: RemoteControlSettings, dockGroups: DockGroupsSettings) {
             version = 26
             self.enabledFeatures = enabledFeatures.map(\.rawValue).sorted()
             self.rules = rules
@@ -1819,6 +1842,7 @@ final class MacPilotModel: ObservableObject {
             self.launchesAtLogin = launchesAtLogin
             self.lastScheduledBootSession = lastScheduledBootSession
             self.automaticUpdateChecks = automaticUpdateChecks
+            self.updateChannel = updateChannel
             self.bleUnlock = bleUnlock
             self.fileCompression = fileCompression
             self.screenCapture = screenCapture
@@ -1852,6 +1876,7 @@ final class MacPilotModel: ObservableObject {
             launchesAtLoginWasStored = container.contains(.launchesAtLogin)
             lastScheduledBootSession = try container.decodeIfPresent(String.self, forKey: .lastScheduledBootSession)
             automaticUpdateChecks = try container.decodeIfPresent(Bool.self, forKey: .automaticUpdateChecks) ?? true
+            updateChannel = (try container.decodeIfPresent(String.self, forKey: .updateChannel)).flatMap(AppChannel.init(rawValue:)) ?? .stable
             bleUnlock = try container.decodeIfPresent(BLEUnlockSettings.self, forKey: .bleUnlock) ?? BLEUnlockSettings()
             fileCompression = try container.decodeIfPresent(FolderCompressionSettings.self, forKey: .fileCompression) ?? FolderCompressionSettings()
             screenCapture = try container.decodeIfPresent(ScreenCaptureSettings.self, forKey: .screenCapture) ?? ScreenCaptureSettings()
@@ -1882,6 +1907,7 @@ final class MacPilotModel: ObservableObject {
             try container.encode(launchesAtLogin, forKey: .launchesAtLogin)
             try container.encodeIfPresent(lastScheduledBootSession, forKey: .lastScheduledBootSession)
             try container.encode(automaticUpdateChecks, forKey: .automaticUpdateChecks)
+            try container.encode(updateChannel, forKey: .updateChannel)
             try container.encode(bleUnlock, forKey: .bleUnlock)
             try container.encode(fileCompression, forKey: .fileCompression)
             try container.encode(screenCapture, forKey: .screenCapture)
@@ -1933,6 +1959,12 @@ final class MacPilotModel: ObservableObject {
     /// Automatic update checks. Persisted so the launch-time request can be
     /// switched off entirely.
     @Published var automaticUpdateChecks = true { didSet { saveIfReady() } }
+    @Published var updateChannel: AppChannel = .developmentDefault {
+        didSet {
+            updater.setChannel(updateChannel)
+            saveIfReady()
+        }
+    }
     @Published private(set) var lastChecked = Date()
     @Published var alertMessage: String?
     @Published private(set) var alertOffersAccessibilitySettings = false
@@ -2082,6 +2114,7 @@ final class MacPilotModel: ObservableObject {
         }
         isLoading = true
         load()
+        updater.setChannel(updateChannel)
         isLoading = false
         FeatureRegistry.shared.registerAll(model: self, in: featureLifecycle)
         save()
@@ -3029,6 +3062,7 @@ final class MacPilotModel: ObservableObject {
             ? configuration.launchesAtLogin
             : SMAppService.mainApp.status == .enabled
         automaticUpdateChecks = configuration.automaticUpdateChecks
+        updateChannel = configuration.updateChannel
         lastScheduledBootSession = configuration.lastScheduledBootSession
         ble.applyLoadedSettings(configuration.bleUnlock)
         fileCompression.applyLoadedSettings(configuration.fileCompression)
@@ -3072,6 +3106,7 @@ final class MacPilotModel: ObservableObject {
             launchesAtLogin: launchesAtLogin,
             lastScheduledBootSession: lastScheduledBootSession,
             automaticUpdateChecks: automaticUpdateChecks,
+            updateChannel: updateChannel,
             bleUnlock: ble.settings,
             fileCompression: fileCompression.settings,
             screenCapture: screenCapture.settings,
@@ -5451,6 +5486,8 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(model.t("settings")).font(.system(size: 30, weight: .bold))
                     Text(model.t("manageRules")).foregroundStyle(.secondary)
+                    Text(model.t(AppChannel.installed() == .stable ? "installedStableChannel" : "installedBetaChannel"))
+                        .font(.caption).foregroundStyle(.secondary)
                     Text(AppVersionInfo.current().localizedDescription(language: model.language))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -5532,12 +5569,30 @@ private struct SoftwareUpdateSettingsView: View {
     @EnvironmentObject private var model: MacPilotModel
     @ObservedObject var updater: SoftwareUpdater
     let language: AppLanguage
+    @State private var confirmsBeta = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(t("softwareUpdate")).font(.headline)
             Text(t("updateDescription")).font(.subheadline).foregroundStyle(.secondary)
             Text(t("currentVersion", updater.currentVersion)).font(.caption).foregroundStyle(.tertiary)
+
+            Text(t(AppChannel.installed() == .stable ? "installedStableChannel" : "installedBetaChannel"))
+                .font(.caption).foregroundStyle(.secondary)
+            Picker(t("updateChannel"), selection: Binding(
+                get: { model.updateChannel },
+                set: { channel in
+                    if channel == .beta && model.updateChannel != .beta { confirmsBeta = true }
+                    else { model.updateChannel = channel }
+                }
+            )) {
+                ForEach(AppChannel.allCases, id: \.self) { channel in
+                    Text(t(channel.titleKey)).tag(channel)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .disabled(updater.state.activity == .downloading || updater.state.activity == .installing)
+            Text(t(model.updateChannel.descriptionKey)).font(.caption).foregroundStyle(.secondary)
 
             Toggle(t("automaticUpdateChecks"), isOn: $model.automaticUpdateChecks)
                 .toggleStyle(.switch)
@@ -5567,7 +5622,7 @@ private struct SoftwareUpdateSettingsView: View {
                 Button(t("downloadAndInstall")) {
                     Task { await updater.downloadAndInstall() }
                 }
-                .buttonStyle(.borderedProminent)
+                .macPilotProminentButtonStyle()
             case .downloading:
                 progress(t("downloadingUpdate"))
             case .installing:
@@ -5577,6 +5632,12 @@ private struct SoftwareUpdateSettingsView: View {
                     .foregroundStyle(.red)
                 checkButton
             }
+        }
+        .alert(t("switchBetaTitle"), isPresented: $confirmsBeta) {
+            Button(t("cancel"), role: .cancel) {}
+            Button(t("switchChannel")) { model.updateChannel = .beta }
+        } message: {
+            Text(t("switchBetaBody"))
         }
     }
 
