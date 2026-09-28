@@ -101,11 +101,11 @@ The repo-root `SUMMARY.md` is the project's Chinese development summary (feature
 
 ## MacPilot release preference
 
-- After MacPilot changes are complete and verified, automatically commit and push `main`, create a new patch Release tag, and verify the GitHub Actions run plus Release assets without waiting for another reminder.
-- This applies to **every** pushed change, including docs-only and dead-code-only commits — do not hold a change back on the grounds that it has no user-visible effect.
-- `git fetch` and confirm `origin/main` has not moved immediately before tagging; other sessions push here concurrently. If it has, rebase, re-run the gates on the merged tree, and re-derive the version.
-- Only GitHub repositories receive GitHub Releases. Never move or overwrite an existing tag; use a new patch version.
-- Formal GitHub releases must use the authenticated Developer ID signing and Apple notarization flow above; do not publish an unsigned or unnotarized ZIP as the release asset.
+- After every completed and verified MacPilot change, automatically commit and push `main`, then publish a new Beta prerelease tagged `v<major>.<minor>.<patch>-beta.<n>` through `release-beta.yml`. This includes docs-only and dead-code-only changes; do not wait for another reminder.
+- Before creating the Beta tag, `git fetch` and confirm `origin/main` has not moved. If it has, rebase, rerun the required gates on the merged tree, and derive a fresh Beta version.
+- Verify the Beta GitHub Actions run and its Release assets. Beta tags must produce GitHub prereleases (`prerelease=true`); never move or overwrite an existing tag.
+- Do not create a stable version tag (`v<major>.<minor>.<patch>`) or publish a formal Stable Release unless the user explicitly asks for a formal/stable release. When explicitly requested, use a new patch version, never overwrite a tag, and follow the authenticated Developer ID signing and Apple notarization flow above; verify the Actions run and release assets.
+- After a successful release, upgrade the local Mac (`/Applications/MacPilot.app`) from the corresponding verified release ZIP: validate its signature and notarization ticket with `codesign --verify --deep --strict` and `xcrun stapler validate`, quit the running app, install with `ditto`, relaunch, and confirm the remote channel answers on `127.0.0.1:43847`.
 
 ## PilotNest App Store signing gate
 
