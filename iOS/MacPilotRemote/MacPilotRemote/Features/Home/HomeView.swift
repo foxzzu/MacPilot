@@ -66,6 +66,9 @@ struct HomeView: View {
                 }
             }
         }
+        .onChange(of: appModel.connectionGeneration) { _, _ in
+            trackpadModel?.connectionReplaced()
+        }
         .onChange(of: appModel.connectionState) { _, _ in
             trackpadModel?.connectionStateChanged(appModel.connectionState)
         }

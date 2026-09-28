@@ -1,5 +1,6 @@
 import Foundation
 import MacPilotRemoteProtocol
+import MacPilotRemoteTransport
 import Network
 import OSLog
 
@@ -25,6 +26,12 @@ final class RemoteDiscoveryService: ObservableObject {
 
     /// Raised whenever the visible Mac list changes.
     var onResultsChanged: (@MainActor ([DiscoveredMac]) -> Void)?
+
+    private var networkPaths: [UUID: [(method: RemoteConnectionMethod, endpoint: NWEndpoint)]] = [:]
+
+    func endpoints(for deviceID: UUID) -> [(method: RemoteConnectionMethod, endpoint: NWEndpoint)] {
+        networkPaths[deviceID] ?? []
+    }
 
     private var browser: NWBrowser?
     private var browseGeneration = 0
@@ -71,6 +78,7 @@ final class RemoteDiscoveryService: ObservableObject {
         lastError = nil
         isPermissionDenied = false
         discovered = []
+        networkPaths = [:]
         unrecognizedServiceCount = 0
     }
 
@@ -102,6 +110,7 @@ final class RemoteDiscoveryService: ObservableObject {
 
     private func handle(_ results: Set<NWBrowser.Result>) {
         var macs: [DiscoveredMac] = []
+        networkPaths = [:]
         var unrecognized = 0
         for result in results {
             guard let mac = Self.makeMac(from: result) else {
@@ -111,7 +120,17 @@ final class RemoteDiscoveryService: ObservableObject {
                 )
                 continue
             }
-            macs.append(mac)
+            if !macs.contains(where: { $0.id == mac.id }) { macs.append(mac) }
+            if case let .service(name, type, domain, _) = result.endpoint {
+                if result.interfaces.isEmpty {
+                    networkPaths[mac.id, default: []].append((.localNetwork, result.endpoint))
+                }
+                for interface in result.interfaces {
+                    let method: RemoteConnectionMethod = interface.name.hasPrefix("awdl") ? .awdl : .localNetwork
+                    let endpoint = NWEndpoint.service(name: name, type: type, domain: domain, interface: interface)
+                    networkPaths[mac.id, default: []].append((method, endpoint))
+                }
+            }
         }
         macs.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         unrecognizedServiceCount = unrecognized

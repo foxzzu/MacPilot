@@ -43,6 +43,21 @@ struct RemoteSettingsView: View {
                     Text(appModel.text("clientNameHint"))
                 }
 
+                Section {
+                    ForEach(Array(appModel.connectionPriority.enumerated()), id: \.element) { index, method in
+                        HStack {
+                            Text("\(index + 1)").foregroundStyle(.secondary)
+                            Text(appModel.text(method.textKey))
+                                .accessibilityIdentifier("connectionPriority.\(method.rawValue)")
+                        }
+                    }
+                    .onMove(perform: appModel.moveConnectionPriority)
+                } header: {
+                    Text(appModel.text("connectionPriority"))
+                } footer: {
+                    Text(appModel.text("connectionPriorityHint"))
+                }
+
                 Section(appModel.text("permissions")) {
                     HStack {
                         Text(appModel.text("localNetwork"))
@@ -120,6 +135,7 @@ struct RemoteSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .environment(\.editMode, .constant(.active))
             .navigationTitle(appModel.text("settingsTitle"))
             .navigationBarTitleDisplayMode(.large)
             .confirmationDialog(

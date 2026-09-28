@@ -43,6 +43,7 @@ final class RemoteConnectionManager {
     /// (connect latency ms, handshake latency ms) measured once per session.
     var onMetrics: (@MainActor (Int?, Int?) -> Void)?
 
+    var dialEndpoint: String?
     private var transport: RemoteTransport?
     private var buffer = Data()
     private var phase: Phase = .idle

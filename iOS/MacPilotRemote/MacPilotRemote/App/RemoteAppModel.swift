@@ -18,9 +18,8 @@ import UIKit
 /// the connection race, reconnection and command execution.
 ///
 /// Every reachable path to the Mac is dialled at the same time and the first one
-/// to finish authenticating becomes the session. The paths are independent all
-/// the way down, so a slow one can never hold up a fast one, and the loser is
-/// torn down before the winner is promoted.
+/// to finish authenticating becomes the session. Higher-priority paths continue
+/// racing and replace it only after completing their own authentication.
 @MainActor
 final class RemoteAppModel: ObservableObject {
     struct PairingPrompt: Identifiable, Equatable {
@@ -30,13 +29,13 @@ final class RemoteAppModel: ObservableObject {
 
     /// One of the ways the phone can reach the Mac.
     ///
-    /// They are deliberately parallel rather than ordered: Bonjour is the
-    /// address that is right now, the remembered host/port is the one that was
-    /// right last time, and Bluetooth is the only path that needs no shared
-    /// network at all.
+    /// LAN and AWDL use interface-bound Bonjour results (plus remembered addresses).
+    /// Bonjour/remembered remain labels for the single first-pairing attempt.
     enum RacePath: String, Equatable {
         /// The `_macpilot._tcp` result Bonjour is advertising right now.
         case bonjour
+        case localNetwork
+        case awdl
         /// The host and port that worked last time.
         case remembered
         /// An L2CAP channel the Mac opened to this phone.
@@ -46,6 +45,8 @@ final class RemoteAppModel: ObservableObject {
         /// the diagnostics follow the app language like everything else.
         var textKey: String {
             switch self {
+            case .localNetwork: "connectionMethodLocalNetwork"
+            case .awdl: "connectionMethodAwdl"
             case .bonjour: "racePathBonjour"
             case .remembered: "racePathRemembered"
             case .bluetooth: "racePathBluetooth"
@@ -61,6 +62,8 @@ final class RemoteAppModel: ObservableObject {
     private struct Candidate {
         let path: RacePath
         let manager: RemoteConnectionManager
+        let method: RemoteConnectionMethod
+        let startedAt = Date()
     }
 
     /// The newest level the user asked for. Held rather than sent immediately
@@ -117,7 +120,7 @@ final class RemoteAppModel: ObservableObject {
     let store: PairedMacStore
     let discovery = RemoteDiscoveryService()
     /// The link carrying the session. A race promotes its winner here, so this
-    /// is replaced rather than reused; every loser is torn down before the swap.
+    /// is replaced rather than reused; higher-ranked candidates keep running.
     private(set) var connection = RemoteConnectionManager()
     /// The Bluetooth path, dialled on the same footing as the network ones.
     ///
@@ -132,13 +135,38 @@ final class RemoteAppModel: ObservableObject {
     private var pairingTarget: DiscoveredMac?
     /// Every dial still in flight. `connection` is never one of these.
     private var candidates: [Candidate] = []
+    private var activeMethod: RemoteConnectionMethod?
+    @Published private(set) var connectionGeneration = 0
+
+    var connectionPriority: [RemoteConnectionMethod] { store.connectionPriority }
+
+    func moveConnectionPriority(from source: IndexSet, to destination: Int) {
+        var order = connectionPriority
+        order.move(fromOffsets: source, toOffset: destination)
+        store.setConnectionPriority(order)
+        pruneCandidates()
+        if connection.isReady, connection.transportKind != .bluetooth, !shouldTry(.bluetooth) {
+            stopBLEFallback()
+        }
+        restartConnectSupervisor()
+    }
+
+    private func shouldTry(_ method: RemoteConnectionMethod) -> Bool {
+        !connection.isReady || RemoteConnectionPriority.shouldReplace(activeMethod, with: method, order: connectionPriority)
+    }
+
+    private func pruneCandidates() {
+        for candidate in candidates where !shouldTry(candidate.method) {
+            removeCandidate(candidate.manager)
+        }
+    }
     /// Timings a candidate reported immediately before it was promoted.
     ///
     /// `RemoteConnectionManager` measures the transport and handshake on the line
     /// above the one that announces the session, so a winning candidate is still
     /// an ordinary candidate at that moment. Applying them on promotion is the
     /// only way Settings can show how long the race that won actually took.
-    private var pendingMetrics: (connect: Int?, handshake: Int?)?
+    private var pendingMetrics: [ObjectIdentifier: (connect: Int?, handshake: Int?)] = [:]
     private var supervisorTask: Task<Void, Never>?
     /// Bumped on every start/stop so a finishing supervisor run cannot clear the
     /// handle of a newer one.
@@ -252,11 +280,8 @@ final class RemoteAppModel: ObservableObject {
 
     /// Points one candidate's callbacks at this model.
     ///
-    /// Every closure checks whether its manager is still the session before it
-    /// touches UI state. That is the whole trick behind the race: the losers keep
-    /// running — and keep failing, reconnecting and reporting — without any of it
-    /// reaching the user, and the first one to authenticate simply becomes
-    /// `connection`.
+    /// Candidate failures stay in diagnostics. Only the current manager updates
+    /// visible state, and a fully authenticated higher-priority candidate can replace it.
     private func wire(_ manager: RemoteConnectionManager, path: RacePath) {
         manager.onStateChange = { [weak self, weak manager] state in
             guard let self, let manager, self.isCurrent(manager) else { return }
@@ -271,11 +296,18 @@ final class RemoteAppModel: ObservableObject {
         manager.onDeviceResolved = { [weak self, weak manager] deviceID, name, endpoint in
             guard let self, let manager else { return }
             guard !self.isCurrent(manager) else {
+                self.activeMethod = manager.transportKind == .bluetooth ? .bluetooth
+                    : (manager.linkDescription.hasPrefix("awdl") ? .awdl : .localNetwork)
                 self.handleConnected(deviceID: deviceID, name: name, endpoint: endpoint)
                 return
             }
             guard self.candidates.contains(where: { $0.manager === manager }) else { return }
             self.raceLog("race won by \(path.rawValue)")
+            guard let candidate = self.candidates.first(where: { $0.manager === manager }),
+                  self.shouldTry(candidate.method) else {
+                self.removeCandidate(manager)
+                return
+            }
             self.promote(manager)
             self.handleConnected(deviceID: deviceID, name: name, endpoint: endpoint)
         }
@@ -326,11 +358,12 @@ final class RemoteAppModel: ObservableObject {
         manager.onMetrics = { [weak self, weak manager] connect, handshake in
             guard let self, let manager else { return }
             guard self.isCurrent(manager) else {
+                guard self.candidates.contains(where: { $0.manager === manager }) else { return }
                 // A candidate reports its transport and handshake timings on the
                 // line before it announces the session, so at this instant the
                 // winner is still an ordinary candidate. Hold them for the
                 // promotion instead of dropping the only measurement of the race.
-                self.pendingMetrics = (connect, handshake)
+                self.pendingMetrics[ObjectIdentifier(manager)] = (connect, handshake)
                 return
             }
             self.metrics.connectLatencyMs = connect
@@ -380,15 +413,9 @@ final class RemoteAppModel: ObservableObject {
 
     // MARK: - Bluetooth path
 
-    /// Advertising runs whenever the app is in the foreground and not connected.
-    ///
-    /// It deliberately no longer waits for the network to fail: Bluetooth is one
-    /// of the three paths dialled at once, and the phone is the peripheral, so
-    /// advertising is what makes the path exist at all. The cost is a radio
-    /// advertisement for as long as the app is open and disconnected; the moment
-    /// a session is up — on any link — advertising stops again.
+    /// Advertise while disconnected or while Bluetooth can improve the current link.
     private func startBLEFallback() {
-        guard isForeground, !connectionState.isConnected else { return }
+        guard isForeground, shouldTry(.bluetooth) else { return }
         ble.start()
         bleFallbackAdvertising = ble.isAdvertising
     }
@@ -404,7 +431,7 @@ final class RemoteAppModel: ObservableObject {
     /// slowest one.
     private func adoptBLEChannel(_ channel: CBL2CAPChannel) {
         bleFallbackAdvertising = ble.isAdvertising
-        guard !connectionState.isConnected else {
+        guard shouldTry(.bluetooth) else {
             close(channel)
             return
         }
@@ -492,16 +519,27 @@ final class RemoteAppModel: ObservableObject {
 
     /// Owns dialling while the app is in the foreground.
     ///
-    /// This is the only retry authority, and it is now also the only place that
-    /// decides *what* to dial: every reachable path goes out at once and the
-    /// first one to authenticate wins. It used to be a strict priority order,
-    /// which meant a stale remembered address could hold the whole connection
-    /// back for the full attempt timeout while a fresh Bonjour result sat unused.
+    /// Dial all paths while disconnected, then retry only higher-priority paths.
+    /// An upgrade attempt never changes the visible connected state or closes
+    /// the usable session before the replacement has authenticated.
     private func runConnectSupervisor() async {
         var attempt = 0
 
         while !Task.isCancelled {
-            if connectionState.isConnected { return }
+            if connectionState.isConnected {
+                if activeMethod == connectionPriority.first { return }
+                startBLEFallback()
+                addNetworkCandidates()
+                // Retry only unfinished higher-priority paths. The current link stays usable.
+                await pause(connectAttemptTimeout)
+                if Task.isCancelled { return }
+                for candidate in candidates where !candidate.manager.isTransportReady
+                    || Date().timeIntervalSince(candidate.startedAt) >= 15 {
+                    removeCandidate(candidate.manager)
+                }
+                await pause(connectRetryDelays.last ?? 5)
+                continue
+            }
             // Never interrupt a handshake: the user may be typing a pair code.
             if connectionState == .pairing || connectionState == .authenticating {
                 await pause(0.5)
@@ -514,6 +552,8 @@ final class RemoteAppModel: ObservableObject {
             }
 
             startRace()
+            if !isRacingFirstPairing { addNetworkCandidates() }
+            startBLEFallback()
             guard !candidates.isEmpty else {
                 // Nothing reachable yet. Discovery restarts this loop the moment
                 // it produces an address, so the backoff is only a safety net.
@@ -602,22 +642,7 @@ final class RemoteAppModel: ObservableObject {
         // A first pairing is deliberately single-path; `isRacingFirstPairing`
         // explains why. Everything else goes out in parallel.
         if !isRacingFirstPairing {
-            if let endpoint = target.discovered {
-                addCandidate(
-                    path: .bonjour,
-                    transport: NetworkRemoteTransport(to: endpoint),
-                    deviceID: target.deviceID,
-                    name: target.name
-                )
-            }
-            if let endpoint = target.remembered, !sameAddress(endpoint, target.discovered) {
-                addCandidate(
-                    path: .remembered,
-                    transport: NetworkRemoteTransport(to: endpoint),
-                    deviceID: target.deviceID,
-                    name: target.name
-                )
-            }
+            addNetworkCandidates()
         } else if let endpoint = target.discovered ?? target.remembered {
             addCandidate(
                 path: target.discovered == nil ? .remembered : .bonjour,
@@ -628,17 +653,42 @@ final class RemoteAppModel: ObservableObject {
         }
     }
 
+    private func addNetworkCandidates() {
+        guard isForeground, !isRacingFirstPairing, let target = raceTarget else { return }
+        var endpoints = discovery.endpoints(for: target.deviceID)
+        if let remembered = target.remembered {
+            let method: RemoteConnectionMethod
+            if case let .hostPort(host, _) = remembered,
+               RemoteInterfaceName.scope(of: String(describing: host))?.hasPrefix("awdl") == true {
+                method = .awdl
+            } else {
+                method = .localNetwork
+            }
+            endpoints.append((method, remembered))
+        }
+        for (method, endpoint) in endpoints where shouldTry(method) {
+            let path: RacePath = method == .awdl ? .awdl : .localNetwork
+            let identity = String(describing: endpoint)
+            guard !candidates.contains(where: { $0.method == method && $0.manager.dialEndpoint == identity }) else { continue }
+            addCandidate(path: path, transport: NetworkRemoteTransport(to: endpoint, method: method),
+                         deviceID: target.deviceID, name: target.name, method: method, endpoint: identity)
+        }
+    }
+
     /// Starts one dial. The candidate owns its own transport, framing and
     /// handshake, so two candidates cannot interfere with each other.
     private func addCandidate(
         path: RacePath,
         transport: RemoteTransport,
         deviceID: UUID?,
-        name: String
+        name: String,
+        method: RemoteConnectionMethod? = nil,
+        endpoint: String? = nil
     ) {
         let manager = RemoteConnectionManager()
+        manager.dialEndpoint = endpoint
         wire(manager, path: path)
-        candidates.append(Candidate(path: path, manager: manager))
+        candidates.append(Candidate(path: path, manager: manager, method: method ?? (path == .bluetooth ? .bluetooth : .localNetwork)))
         refreshRacingPaths()
         if !connectionState.isConnected,
            connectionState != .pairing,
@@ -659,6 +709,7 @@ final class RemoteAppModel: ObservableObject {
         guard let index = candidates.firstIndex(where: { $0.manager === manager }) else { return }
         let candidate = candidates.remove(at: index)
         refreshRacingPaths()
+        pendingMetrics.removeValue(forKey: ObjectIdentifier(candidate.manager))
         candidate.manager.disconnect(report: false)
     }
 
@@ -666,6 +717,7 @@ final class RemoteAppModel: ObservableObject {
         guard let index = candidates.firstIndex(where: { $0.path == path }) else { return }
         let candidate = candidates.remove(at: index)
         refreshRacingPaths()
+        pendingMetrics.removeValue(forKey: ObjectIdentifier(candidate.manager))
         candidate.manager.disconnect(report: false)
     }
 
@@ -675,27 +727,37 @@ final class RemoteAppModel: ObservableObject {
         candidates.removeAll { $0.manager !== keeper }
         refreshRacingPaths()
         for candidate in doomed {
+            pendingMetrics.removeValue(forKey: ObjectIdentifier(candidate.manager))
             candidate.manager.disconnect(report: false)
         }
     }
 
-    /// Makes a candidate the session and tears down everything it beat.
+    /// Swaps only authenticated links; lower-ranked attempts cannot take over.
     private func promote(_ manager: RemoteConnectionManager) {
-        cancelCandidates(except: manager)
+        guard let winner = candidates.first(where: { $0.manager === manager }) else { return }
+        let previous = connection
+        let switching = previous.isReady
+        if !manager.isReady { cancelCandidates(except: manager) }
         candidates.removeAll { $0.manager === manager }
-        refreshRacingPaths()
         connection = manager
+        activeMethod = manager.transportKind == .bluetooth ? .bluetooth
+            : (manager.linkDescription.hasPrefix("awdl") ? .awdl : winner.method)
+        previous.disconnect(report: false)
+        runningCommand = nil
+        latencyMs = nil
+        metrics.commandRTTMs = nil
+        pendingLevel = nil
+        isSendingLevel = false
+        isRefreshingState = false
+        isRefreshingDockGroups = false
+        if manager.isReady { pruneCandidates() }
+        refreshRacingPaths()
+        if switching { raceLog("upgraded to \(winner.method.rawValue)") }
+        connectionGeneration += 1
     }
 
     private func refreshRacingPaths() {
-        racingPaths = candidates.map(\.path)
-    }
-
-    /// Compares two endpoints by their printable form. Only used to avoid dialling
-    /// the Bonjour address a second time under the guise of "the remembered one".
-    private func sameAddress(_ lhs: NWEndpoint?, _ rhs: NWEndpoint?) -> Bool {
-        guard let lhs, let rhs else { return lhs == nil && rhs == nil }
-        return String(describing: lhs) == String(describing: rhs)
+        racingPaths = Array(Set(candidates.map(\.path.rawValue))).sorted().compactMap(RacePath.init(rawValue:))
     }
 
     /// Re-adopts Macs whose long-term key is still in the Keychain but whose
@@ -719,8 +781,12 @@ final class RemoteAppModel: ObservableObject {
         if metrics.discoveryLatencyMs == nil, !macs.isEmpty, let started = discoveryStartedAt {
             metrics.discoveryLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
         }
-        guard !connectionState.isConnected,
-              connectionState != .pairing,
+        if connectionState.isConnected {
+            addNetworkCandidates()
+            startConnectSupervisor()
+            return
+        }
+        guard connectionState != .pairing,
               connectionState != .authenticating else { return }
         if pairingTarget != nil, errorKey != nil { return }
 
@@ -730,19 +796,11 @@ final class RemoteAppModel: ObservableObject {
               let target = macs.first(where: { $0.id == selectedID }) else { return }
         if pairingTarget == nil { activeMac = store.mac(id: target.id) }
 
-        // The supervisor owns dialling. A race that is already in flight gets the
-        // freshly resolved address added to it: a remembered address can be
-        // stale, and this is the moment Bonjour hands over the right one.
-        if candidates.isEmpty {
-            restartConnectSupervisor()
-        } else if !candidates.contains(where: { $0.path == .bonjour }),
-                  RemoteKeychain.hasPairingKey(for: target.id.uuidString) {
-            addCandidate(
-                path: .bonjour,
-                transport: NetworkRemoteTransport(to: target.endpoint),
-                deviceID: target.id,
-                name: target.name
-            )
+        if isRacingFirstPairing {
+            if candidates.isEmpty { restartConnectSupervisor() }
+        } else {
+            addNetworkCandidates()
+            startConnectSupervisor()
         }
     }
 
@@ -750,20 +808,18 @@ final class RemoteAppModel: ObservableObject {
         let wasPairing = pairingTarget != nil
         hasEverConnected = true
         pairingTarget = nil
-        stopConnectSupervisor()
         // The winner measured its transport and handshake just before it was
         // promoted, so its timings are waiting here rather than on `metrics`.
-        if let pending = pendingMetrics {
+        if let pending = pendingMetrics.removeValue(forKey: ObjectIdentifier(connection)) {
             metrics.connectLatencyMs = pending.connect
             metrics.handshakeLatencyMs = pending.handshake
-            pendingMetrics = nil
         }
         // A working link makes Bluetooth redundant, and an idle advertisement
         // only costs both devices power. The exception is Bluetooth itself: the
         // L2CAP channel belongs to the peripheral, so stopping the peripheral
         // while it is the link carrying this session would close the stream we
         // just connected with.
-        if connection.transportKind != .bluetooth {
+        if connection.transportKind != .bluetooth && !shouldTry(.bluetooth) {
             stopBLEFallback()
         }
         connectionState = .connected
@@ -786,6 +842,7 @@ final class RemoteAppModel: ObservableObject {
         if wasPairing { store.preferredMacID = deviceID.uuidString }
         activeMac = store.mac(id: deviceID)
         refreshDockGroups()
+        startConnectSupervisor()
     }
 
     private func handleDisconnected() {
@@ -834,6 +891,7 @@ final class RemoteAppModel: ObservableObject {
         connection.disconnect(report: false)
         // A fresh manager makes late callbacks from the previous Mac irrelevant.
         connection = RemoteConnectionManager()
+        activeMethod = nil
         macState = nil
         latencyMs = nil
         errorKey = nil
@@ -847,7 +905,7 @@ final class RemoteAppModel: ObservableObject {
         isSendingLevel = false
         isRefreshingState = false
         hasEverConnected = false
-        pendingMetrics = nil
+        pendingMetrics = [:]
         metrics.connectLatencyMs = nil
         metrics.handshakeLatencyMs = nil
         metrics.commandRTTMs = nil

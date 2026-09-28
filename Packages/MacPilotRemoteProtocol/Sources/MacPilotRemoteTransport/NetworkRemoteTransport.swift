@@ -18,18 +18,24 @@ public final class NetworkRemoteTransport: RemoteTransport {
     private var didCancel = false
 
     /// Outbound: dial a Bonjour service or a remembered host/port.
-    public convenience init(to endpoint: NWEndpoint, queue: DispatchQueue? = nil) {
+    public convenience init(to endpoint: NWEndpoint, method: RemoteConnectionMethod? = nil, queue: DispatchQueue? = nil) {
+        self.init(connection: NWConnection(to: endpoint, using: Self.parameters(to: endpoint, method: method)), queue: queue)
+    }
+
+    static func parameters(to endpoint: NWEndpoint, method: RemoteConnectionMethod?) -> NWParameters {
         let tcpOptions = NWProtocolTCP.Options()
         // Realtime pointer frames are tiny and arrive continuously. Do not
         // hold one behind a delayed ACK while waiting to coalesce more bytes.
         tcpOptions.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcpOptions)
-        // Peer-to-peer only helps when Bonjour handed us a service to resolve;
-        // a raw host/port fast path stays plain TCP.
-        if case .service = endpoint {
-            parameters.includePeerToPeer = true
+        // Bind each Bonjour candidate to the interface that discovered it.
+        // A remembered AWDL address is scoped to its interface already.
+        if case let .service(_, _, _, interface) = endpoint {
+            parameters.includePeerToPeer = method != .localNetwork
+            parameters.requiredInterface = interface
         }
-        self.init(connection: NWConnection(to: endpoint, using: parameters), queue: queue)
+        if let method { parameters.includePeerToPeer = method == .awdl }
+        return parameters
     }
 
     /// Inbound: adopt a connection a listener already accepted.

@@ -198,15 +198,18 @@ final class RemoteTrackpadModel: ObservableObject {
     }
 
     private func beginSession() async {
-        defer { beginTask = nil }
         guard let appModel else { return }
+        let generation = appModel.connectionGeneration
+        defer { if appModel.connectionGeneration == generation { beginTask = nil } }
         guard appModel.connectionState.isConnected else {
             // The page opened while the supervisor was still dialling; the
             // state observer re-begins the moment the link is up.
             phase = .reconnecting
             return
         }
-        switch await appModel.beginRealtimeInput() {
+        let result = await appModel.beginRealtimeInput()
+        guard !Task.isCancelled, appModel.connectionGeneration == generation else { return }
+        switch result {
         case .failure(let error):
             beginErrorKey = error.messageKey
             phase = .disconnected
@@ -251,6 +254,15 @@ final class RemoteTrackpadModel: ObservableObject {
         guard now - lastDebugRefreshAt >= 0.25 else { return }
         lastDebugRefreshAt = now
         pressureDebug = engine.pressureDebugSnapshot(time: now)
+    }
+
+    /// A replacement link needs fresh input and keyboard sessions even when
+    /// the overall connection state remains connected.
+    func connectionReplaced() {
+        beginTask?.cancel()
+        beginTask = nil
+        connectionStateChanged(.reconnecting)
+        if let appModel { connectionStateChanged(appModel.connectionState) }
     }
 
     /// Called from the view whenever the app model's connection state moves.
@@ -555,7 +567,9 @@ final class RemoteTrackpadModel: ObservableObject {
             // Committed keys still drain if the user immediately dismisses
             // the keyboard or leaves the page.
             guard let self, self.textInputEpoch == epoch else { return }
-            if !(await appModel.sendTextInput(operation)) {
+            let sent = await appModel.sendTextInput(operation)
+            guard self.textInputEpoch == epoch else { return }
+            if !sent {
                 self.keyboardActive = false
                 self.textInputEpoch += 1
                 await appModel.endTextInput()
@@ -571,8 +585,10 @@ final class RemoteTrackpadModel: ObservableObject {
         keyboardRecheckTask = nil
         guard let appModel else { return }
         let previous = textInputTask
+        let generation = appModel.connectionGeneration
         textInputTask = Task {
             await previous?.value
+            guard appModel.connectionGeneration == generation else { return }
             await appModel.endTextInput()
         }
     }

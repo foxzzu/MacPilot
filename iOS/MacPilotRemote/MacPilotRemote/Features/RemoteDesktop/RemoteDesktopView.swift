@@ -73,6 +73,7 @@ struct RemoteDesktopView: View {
             desktop.open(appModel: appModel)
         }
         .onDisappear { appModel.desktopModifiers = 0; desktop.close() }
+        .onChange(of: appModel.connectionGeneration) { _, _ in desktop.connectionChanged() }
         .onChange(of: appModel.connectionState) { _, _ in desktop.connectionChanged() }
         .onChange(of: trackpad.phase) { _, phase in
             if phase == .active, desktop.keyboardFocused { trackpad.requestKeyboard(focused: true) }
