@@ -6,3 +6,4 @@ build-device/
 build-archive/
 build-ipa/
 *.xcuserstate
+build-ipa-*/
