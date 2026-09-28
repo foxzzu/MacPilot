@@ -101,7 +101,8 @@ struct HomeView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 72)
+            .frame(minHeight: 72)
+            .padding(.horizontal, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -217,8 +218,8 @@ struct HomeView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
             }
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .padding(.horizontal, 10)
+            .frame(minHeight: 72)
+            .padding(.horizontal, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
