@@ -30,3 +30,20 @@ public enum RemoteConnectionPriority {
         return complete.firstIndex(of: candidate)! < complete.firstIndex(of: current)!
     }
 }
+
+/// Retry lifetimes belong to individual candidates, never to the whole race.
+public enum RemoteConnectionRetryPolicy {
+    public static func shouldRetry(
+        method: RemoteConnectionMethod,
+        startedAt: Date,
+        transportReadyAt: Date?,
+        now: Date
+    ) -> Bool {
+        if let transportReadyAt {
+            return now.timeIntervalSince(transportReadyAt) >= 15
+        }
+        // Peer discovery and radio setup must survive the fast LAN retry cycle.
+        let dialTimeout: TimeInterval = method == .awdl ? 30 : 4
+        return now.timeIntervalSince(startedAt) >= dialTimeout
+    }
+}

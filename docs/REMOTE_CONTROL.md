@@ -246,8 +246,8 @@ launchDockGroupApp   RemoteDockGroupLaunchRequest{groupID, appID} → snapshot p
 - **Capability gated.** The Mac advertises `dockGroups` in the Bonjour TXT
   record and in `serverHello` only when the feature is wired in, and the
   router answers `unsupportedCommand` when the feature is switched off —
-  either way the phone hides the section instead of sending a command an
-  older Mac cannot decode.
+  The phone homepage no longer presents Dock groups or fetches their snapshot
+  on connection. The protocol and Mac handlers remain for compatible peers.
 - **One launch path.** The router calls `DockGroupsRemoteHost`, which wraps
   `DockGroupsModel` and launches through the same `AppLaunchService` the Dock
   helper uses (running members are activated, never duplicated). The phone
@@ -342,10 +342,16 @@ they replace the current session. Equal/lower-priority candidates are closed and
 cannot preempt it. Failed upgrades never interrupt the usable session. Higher-priority
 paths retry while foregrounded, including interfaces discovered after connecting.
 Changing the order applies immediately and is persisted on the phone. Switching
-also re-arms trackpad input and restarts remote video on the new session. A race in which no candidate produces a transport
-within 4 seconds is abandoned and redialled, but a candidate that is already
-mid-handshake is never cut during initial connection. Background upgrade attempts
-are retried after 15 seconds if their handshake stalls, without closing the active link.
+also re-arms trackpad input and restarts remote video on the new session.
+Candidates expire independently: LAN dials retry after 4 seconds, while AWDL
+dials get 30 seconds for peer discovery and radio setup. Retrying LAN does not
+cancel an AWDL dial. A handshake gets 15 seconds starting when its transport
+becomes ready, rather than from the beginning of radio setup. The same policy
+applies to upgrades without closing the active link. When no fresh AWDL browse
+result exists, the saved Bonjour service name is also resolved with peer-to-peer
+enabled; a stale link-local address is no longer the only recovery path. This
+unbound service may resolve over LAN, so promotion uses the actual link rather
+than labeling every peer-enabled connection as AWDL.
 
 Bluetooth takes part from the first attempt instead of waiting for the network to
 fail. That is what makes it useful — establishing the link takes seconds, so

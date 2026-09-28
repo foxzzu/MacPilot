@@ -1,9 +1,45 @@
+import Foundation
 import Testing
 import Network
 @testable import MacPilotRemoteTransport
 
 @Suite("Connection priority")
 struct RemoteConnectionPriorityTests {
+    @Test func coldAWDLIsNotCancelledAtEachLANRetry() {
+        let started = Date(timeIntervalSinceReferenceDate: 100)
+        for elapsed in [4.0, 8, 12, 20, 29.9] {
+            #expect(!RemoteConnectionRetryPolicy.shouldRetry(
+                method: .awdl, startedAt: started, transportReadyAt: nil,
+                now: started.addingTimeInterval(elapsed)
+            ))
+        }
+        #expect(RemoteConnectionRetryPolicy.shouldRetry(
+            method: .awdl, startedAt: started, transportReadyAt: nil,
+            now: started.addingTimeInterval(30)
+        ))
+    }
+
+    @Test func staleLANDoesNotHoldUpOtherCandidates() {
+        let started = Date(timeIntervalSinceReferenceDate: 100)
+        #expect(RemoteConnectionRetryPolicy.shouldRetry(
+            method: .localNetwork, startedAt: started, transportReadyAt: nil,
+            now: started.addingTimeInterval(4)
+        ))
+    }
+
+    @Test func awdlHandshakeGetsItsOwnLifetimeAfterSlowRadioSetup() {
+        let started = Date(timeIntervalSinceReferenceDate: 100)
+        let ready = started.addingTimeInterval(25)
+        #expect(!RemoteConnectionRetryPolicy.shouldRetry(
+            method: .awdl, startedAt: started, transportReadyAt: ready,
+            now: ready.addingTimeInterval(1)
+        ))
+        #expect(RemoteConnectionRetryPolicy.shouldRetry(
+            method: .awdl, startedAt: started, transportReadyAt: ready,
+            now: ready.addingTimeInterval(15)
+        ))
+    }
+
     @Test func bluetoothCanUpgradeThroughAWDLToLAN() {
         let order = RemoteConnectionPriority.defaultOrder
         #expect(RemoteConnectionPriority.shouldReplace(nil, with: .bluetooth, order: order))

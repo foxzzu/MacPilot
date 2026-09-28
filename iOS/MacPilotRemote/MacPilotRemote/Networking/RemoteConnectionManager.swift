@@ -40,6 +40,7 @@ final class RemoteConnectionManager {
     var onLatency: (@MainActor (Int) -> Void)?
     var onFailure: (@MainActor (RemoteConnectionError) -> Void)?
     var onDisconnected: (@MainActor () -> Void)?
+    var onDiagnostic: (@MainActor (String) -> Void)?
     /// (connect latency ms, handshake latency ms) measured once per session.
     var onMetrics: (@MainActor (Int?, Int?) -> Void)?
 
@@ -77,7 +78,7 @@ final class RemoteConnectionManager {
     private var pairConfirmationTask: Task<Void, Never>?
     private var didReportDisconnect = false
     private var connectStartedAt: Date?
-    private var transportReadyAt: Date?
+    private(set) var transportReadyAt: Date?
 
     var isReady: Bool { phase == .ready }
     var isPairing: Bool { phase == .pairing }
@@ -163,6 +164,7 @@ final class RemoteConnectionManager {
         serverPairingPublicKey = nil
         serverCapabilities = []
         isTransportReady = false
+        transportReadyAt = nil
         sentSequence = 0
         buffer = Data()
         let wasActive = phase != .idle && phase != .closed
@@ -313,12 +315,16 @@ final class RemoteConnectionManager {
             startHandshake()
         case .connecting:
             break
-        case .waiting:
+        case .waiting(let reason):
+            onDiagnostic?("transport waiting: \(reason)")
             // A dial may wait for Wi-Fi to settle, but a link that was already
             // ready has lost its path. End it so the app can advertise BLE and
             // race the available paths instead of remaining "connected" forever.
             if transportKind == .network, isTransportReady { disconnect() }
-        case .failed, .closed:
+        case .failed(let reason):
+            onDiagnostic?("transport failed: \(reason)")
+            disconnect()
+        case .closed:
             disconnect()
         }
     }
@@ -341,7 +347,7 @@ final class RemoteConnectionManager {
             clientID: UUID(uuidString: clientID),
             clientName: clientName,
             clientNonce: nonce,
-            features: ["remoteDesktop", "dockGroups"]
+            features: ["remoteDesktop"]
         )
         try? sendPlain(hello)
     }
@@ -377,6 +383,7 @@ final class RemoteConnectionManager {
         // A BLE channel can arrive from any nearby Mac. Never let it replace the
         // device the user selected, even if that Mac has a valid pairing key.
         if let targetDeviceID, targetDeviceID != deviceID {
+            onDiagnostic?("authentication refused: server identity differs from the selected Mac")
             fail(.authenticationFailed)
             return
         }

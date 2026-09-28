@@ -1,10 +1,21 @@
 import Foundation
 import Testing
+import Network
+import MacPilotRemoteProtocol
 @testable import PilotNest
 
 @MainActor
 @Suite("Remote connection retry")
 struct RemoteConnectionRetryTests {
+    @Test func rememberedBonjourNameCanResolveAfterAWDLAddressChanges() {
+        let mac = PairedMac(id: UUID().uuidString, name: "Mac", lastServiceName: "MacPilot-Mac",
+                            lastHost: "fe80::dead%awdl0", lastPort: 43847)
+        #expect(mac.rememberedServiceEndpoint == .service(
+            name: "MacPilot-Mac", type: RemoteProtocolVersion.bonjourServiceType,
+            domain: "local.", interface: nil
+        ))
+        #expect(PairedMac(id: UUID().uuidString, name: "Mac").rememberedServiceEndpoint == nil)
+    }
     @Test func readyButUnfinishedHandshakeIsRetriedAfterItsBoundedLifetime() {
         let started = Date(timeIntervalSinceReferenceDate: 100)
         let now = Date(timeIntervalSinceReferenceDate: 116)

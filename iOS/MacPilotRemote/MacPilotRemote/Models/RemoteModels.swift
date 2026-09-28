@@ -33,6 +33,13 @@ struct PairedMac: Codable, Identifiable, Equatable {
         guard let lastHost, let lastPort, let port = NWEndpoint.Port(rawValue: lastPort) else { return nil }
         return .hostPort(host: NWEndpoint.Host(lastHost), port: port)
     }
+
+    /// Resolve a fresh peer address when the saved link-local address has changed.
+    var rememberedServiceEndpoint: NWEndpoint? {
+        guard let lastServiceName, !lastServiceName.isEmpty else { return nil }
+        return .service(name: lastServiceName, type: RemoteProtocolVersion.bonjourServiceType,
+                        domain: "local.", interface: nil)
+    }
 }
 
 /// One of the two continuous output levels on the remote panel. Each maps onto

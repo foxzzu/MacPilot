@@ -207,13 +207,8 @@ final class RemoteAppModel: ObservableObject {
     /// Retry cadence while the app is in the foreground. The first entries are
     /// deliberately tight: the user has just opened the app and is watching.
     private let connectRetryDelays: [TimeInterval] = [0.25, 0.5, 1, 1.5, 2, 3, 5]
-    /// A stale remembered address can sit in `.waiting` indefinitely, so a race
-    /// in which no candidate produced a transport within this long is dropped and
-    /// redialled — by then Bonjour usually has a fresh endpoint. A candidate
-    /// whose transport is already up is never cut here: that one is mid
-    /// handshake and cutting it would throw the attempt away.
+    /// Check upgrades on the fast LAN cadence; candidates have separate lifetimes.
     private let connectAttemptTimeout = RemoteAppModel.dialRetryTimeout
-    private let handshakeTimeout = RemoteAppModel.handshakeRetryTimeout
     private var isBLEDiagnosticRun: Bool {
         #if DEBUG
         ProcessInfo.processInfo.environment["MACPILOT_BLE_DIAGNOSTIC"] == "1"
@@ -312,6 +307,9 @@ final class RemoteAppModel: ObservableObject {
     /// Candidate failures stay in diagnostics. Only the current manager updates
     /// visible state, and a fully authenticated higher-priority candidate can replace it.
     private func wire(_ manager: RemoteConnectionManager, path: RacePath) {
+        manager.onDiagnostic = { [weak self] message in
+            self?.raceLog("\(path.rawValue): \(message)")
+        }
         manager.onStateChange = { [weak self, weak manager] state in
             guard let self, let manager, self.isCurrent(manager) else { return }
             // Only promote the visible state; failures and disconnects are
@@ -332,8 +330,9 @@ final class RemoteAppModel: ObservableObject {
             }
             guard self.candidates.contains(where: { $0.manager === manager }) else { return }
             self.raceLog("race won by \(path.rawValue)")
-            guard let candidate = self.candidates.first(where: { $0.manager === manager }),
-                  self.shouldTry(candidate.method) else {
+            let resolvedMethod: RemoteConnectionMethod = manager.transportKind == .bluetooth ? .bluetooth
+                : (manager.linkDescription.hasPrefix("awdl") ? .awdl : .localNetwork)
+            guard self.shouldTry(resolvedMethod) else {
                 self.removeCandidate(manager)
                 return
             }
@@ -574,10 +573,7 @@ final class RemoteAppModel: ObservableObject {
                 // Retry only unfinished higher-priority paths. The current link stays usable.
                 await pause(connectAttemptTimeout)
                 if Task.isCancelled { return }
-                for candidate in candidates where !candidate.manager.isTransportReady
-                    || Date().timeIntervalSince(candidate.startedAt) >= handshakeTimeout {
-                    removeCandidate(candidate.manager)
-                }
+                retryExpiredCandidates()
                 await pause(connectRetryDelays.last ?? 5)
                 continue
             }
@@ -604,33 +600,16 @@ final class RemoteAppModel: ObservableObject {
                 continue
             }
 
-            // Wait out this race. It ends when a link is promoted, when one of
-            // them is mid-handshake, or when none of them produced a transport
-            // inside the window.
-            let deadline = Date().addingTimeInterval(connectAttemptTimeout)
+            // Each candidate expires independently. A fast LAN redial must not
+            // restart peer discovery, and handshake time begins at transport ready.
             while !Task.isCancelled, !candidates.isEmpty {
                 if connectionState.isConnected
                     || connectionState == .pairing
                     || connectionState == .authenticating { break }
-                // A transport that is up means a handshake is in flight. Give it
-                // as long as it needs: cutting it would throw the attempt away.
-                if candidates.contains(where: { $0.manager.isTransportReady }) {
-                    let now = Date()
-                    let stalled = candidates.filter {
-                        $0.manager.isTransportReady
-                            && now.timeIntervalSince($0.startedAt) >= handshakeTimeout
-                    }
-                    if !stalled.isEmpty {
-                        for candidate in stalled {
-                            raceLog("handshake timeout for \(candidate.path.rawValue); retrying")
-                            removeCandidate(candidate.manager)
-                        }
-                        continue
-                    }
-                    await pause(0.2)
-                    continue
-                }
-                if Date() >= deadline { break }
+                retryExpiredCandidates()
+                // Redial expired LAN candidates without resetting a cold AWDL
+                // candidate's radio setup or a ready candidate's handshake.
+                if !isRacingFirstPairing { addNetworkCandidates() }
                 await pause(0.2)
             }
 
@@ -641,10 +620,6 @@ final class RemoteAppModel: ObservableObject {
                 await pause(0.2)
                 continue
             }
-            if !candidates.isEmpty {
-                raceLog("no link in \(Int(connectAttemptTimeout))s; redialling")
-                cancelCandidates()
-            }
             attempt += 1
             await pause(0.2)
         }
@@ -652,6 +627,21 @@ final class RemoteAppModel: ObservableObject {
 
     private func pause(_ seconds: TimeInterval) async {
         try? await Task.sleep(for: .seconds(seconds))
+    }
+
+    private func retryExpiredCandidates() {
+        let now = Date()
+        let expired = candidates.filter {
+            RemoteConnectionRetryPolicy.shouldRetry(
+                method: $0.method, startedAt: $0.startedAt,
+                transportReadyAt: $0.manager.transportReadyAt, now: now
+            )
+        }
+        for candidate in expired {
+            let phase = candidate.manager.isTransportReady ? "handshake" : "dial"
+            raceLog("\(phase) timeout for \(candidate.path.rawValue); retrying")
+            removeCandidate(candidate.manager)
+        }
     }
 
     /// Where this race should point, if anywhere.
@@ -709,6 +699,12 @@ final class RemoteAppModel: ObservableObject {
     private func addNetworkCandidates() {
         guard isForeground, !isRacingFirstPairing, let target = raceTarget else { return }
         var endpoints = discovery.endpoints(for: target.deviceID)
+        // Browser results can be late or absent after an interface change. A
+        // saved Bonjour name can still resolve the Mac's current peer address.
+        if let service = store.mac(id: target.deviceID)?.rememberedServiceEndpoint,
+           !endpoints.contains(where: { $0.method == .awdl }) {
+            endpoints.append((.awdl, service))
+        }
         if let remembered = target.remembered {
             let method: RemoteConnectionMethod
             if case let .hostPort(host, _) = remembered,
@@ -748,7 +744,7 @@ final class RemoteAppModel: ObservableObject {
            connectionState != .authenticating {
             connectionState = .connecting
         }
-        raceLog("dialling \(path.rawValue)")
+        raceLog("dialling \(path.rawValue) endpoint=\(endpoint ?? "discovered service")")
         manager.connect(
             using: transport,
             deviceID: deviceID,
@@ -795,7 +791,7 @@ final class RemoteAppModel: ObservableObject {
         candidates.removeAll { $0.manager === manager }
         connection = manager
         activeMethod = manager.transportKind == .bluetooth ? .bluetooth
-            : (manager.linkDescription.hasPrefix("awdl") ? .awdl : winner.method)
+            : (manager.linkDescription.hasPrefix("awdl") ? .awdl : .localNetwork)
         previous.disconnect(report: false)
         runningCommand = nil
         latencyMs = nil
@@ -806,7 +802,7 @@ final class RemoteAppModel: ObservableObject {
         isRefreshingDockGroups = false
         if manager.isReady { pruneCandidates() }
         refreshRacingPaths()
-        if switching { raceLog("upgraded to \(winner.method.rawValue)") }
+        if switching { raceLog("upgraded to \(activeMethod?.rawValue ?? winner.method.rawValue)") }
         connectionGeneration += 1
     }
 
@@ -895,7 +891,6 @@ final class RemoteAppModel: ObservableObject {
         )
         if wasPairing { store.preferredMacID = deviceID.uuidString }
         activeMac = store.mac(id: deviceID)
-        refreshDockGroups()
         startConnectSupervisor()
     }
 
