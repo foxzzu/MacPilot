@@ -181,11 +181,6 @@ struct HomeView: View {
                     HStack(spacing: 5) {
                         Circle().fill(statusColor).frame(width: 6, height: 6)
                         Text(appModel.text(appModel.connectionState.titleKey))
-                        if let latency = appModel.latencyMs, appModel.connectionState.isConnected {
-                            Text("·")
-                            Text(appModel.text("latency", latency))
-                                .monospacedDigit()
-                        }
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)

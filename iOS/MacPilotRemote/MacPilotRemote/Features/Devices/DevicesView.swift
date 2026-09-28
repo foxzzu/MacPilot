@@ -67,8 +67,9 @@ struct DevicesView: View {
                             .background(Capsule().fill(Color.accentColor.opacity(0.15)))
                     }
                 }
-                Text(label(for: presence))
+                Text(statusCaption(for: presence))
                     .font(.caption)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -149,5 +150,13 @@ struct DevicesView: View {
         case .online: return appModel.text("online")
         case .offline: return appModel.text("offline")
         }
+    }
+
+    /// Latency is only measured on the session actually carrying commands, so
+    /// the caption carries it for the connected Mac and stays plain otherwise.
+    private func statusCaption(for presence: RemoteAppModel.MacPresence) -> String {
+        let label = label(for: presence)
+        guard presence == .connected, let latency = appModel.latencyMs else { return label }
+        return "\(label) · \(appModel.text("latency", latency))"
     }
 }
