@@ -2135,6 +2135,28 @@ final class MacPilotModel: ObservableObject {
                 }
             }
         })
+        // Raising the window does not always route through `showMainWindow`:
+        // the system Window menu, session window restoration and scripting all
+        // order the existing window front directly, and a raised-but-empty
+        // window is indistinguishable from a stuck one. Becoming key or main
+        // therefore loads the content too. `load` is idempotent for the normal
+        // `showMainWindow` path, and the generation bump it produces is exactly
+        // what a close in progress compares against.
+        for name in [NSWindow.didBecomeMainNotification, NSWindow.didBecomeKeyNotification] {
+            lifetimeObservers.add(NotificationCenter.default.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let window = notification.object as? NSWindow else { return }
+                MainActor.assumeIsolated {
+                    guard let self,
+                          window.title == Self.mainWindowTitle,
+                          window.canBecomeMain else { return }
+                    self.loadMainWindowContent()
+                }
+            })
+        }
         clearLegacyAccessibilityRecoveryRequest()
         ble.persist = { [weak self] in
             self?.saveIfReady()
