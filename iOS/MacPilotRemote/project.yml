@@ -36,11 +36,16 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.misswell.macpilot.remote
         PRODUCT_NAME: PilotNest
         MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: "20"
+        CURRENT_PROJECT_VERSION: "21"
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_FILE: MacPilotRemote/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         SUPPORTS_MACCATALYST: NO
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: df12e579-3dec-4e63-b2df-86c5e2d37281
 
   MacPilotRemoteTests:
     type: bundle.unit-test
