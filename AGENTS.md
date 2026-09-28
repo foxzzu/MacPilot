@@ -106,3 +106,10 @@ The repo-root `SUMMARY.md` is the project's Chinese development summary (feature
 - `git fetch` and confirm `origin/main` has not moved immediately before tagging; other sessions push here concurrently. If it has, rebase, re-run the gates on the merged tree, and re-derive the version.
 - Only GitHub repositories receive GitHub Releases. Never move or overwrite an existing tag; use a new patch version.
 - Formal GitHub releases must use the authenticated Developer ID signing and Apple notarization flow above; do not publish an unsigned or unnotarized ZIP as the release asset.
+
+## PilotNest App Store signing gate
+
+- Before every PilotNest upload, read and complete `docs/APP_STORE_RELEASE_CHECKLIST.md`. Build 20 (1.2.0) failed Apple's binary validation with ITMS-90161, Invalid Provisioning Profile / Missing code-signing certificate; this was not an App Review content rejection.
+- Validate the exact final exported IPA: distribution signature, matching signer certificate in the embedded profile, profile validity, bundle/team identity, and App Store entitlements. A development-signed archive alone does not prove that the exported IPA is invalid; never diagnose a failed build using another build's archive.
+- Keep the existing Xcode automatic signing + `app-store-connect` export flow unless a separately validated manual distribution flow is needed. Never treat an ASC API key or app-specific password as a signing certificate, or pin an old provisioning-profile UUID without revalidating it.
+- Upload success is not completion: wait for the exact build to reach VALID, verify the attached build, then submit review. VALID and WAITING_FOR_REVIEW do not mean Apple has approved the app.

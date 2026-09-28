@@ -1,0 +1,63 @@
+# PilotNest：App Store 发布检查与 ITMS-90161 记录
+
+每次上传 PilotNest 的最终 IPA 前必须完成此检查；任何签名项失败都应停止上传。本文是项目发布记录，不是需要在普通用户界面中显示的产品功能。
+
+## 2026-09-28 事件：不是缺少审核内容
+
+Apple 邮件针对 PilotNest（App ID `6811335132`）、版本 `1.2.0`、构建 `20`，指出：
+
+> ITMS-90161: Invalid Provisioning Profile — Missing code-signing certificate
+
+涉及 bundle：`com.misswell.macpilot.remote`，包内位置：`Payload/PilotNest.app`。Apple 要求修正签名并上传新 binary，且上传 App Store Connect 必须使用分发 provisioning profile。
+
+这次明确缺的是**有效的分发签名授权／证书关联**，不是截图、隐私政策、功能说明或软件功能。它属于二进制验证失败，不能混称为功能审核驳回。
+
+邮件能够确认 profile 无效、代码签名证书相关验证未通过；单凭邮件不能进一步确定是证书被撤销、profile 过期、profile 与签名证书不匹配，还是用了错误的签名资产。只有取得**构建 20 实际上传的最终 IPA**并检查，才能确定具体子原因；不要把这些可能性记录成已经证实的根因。
+
+诊断时曾检查到其他构建的开发签名 archive；该证据不能用于断言构建 20 的最终 IPA 使用了开发签名。Xcode 可以在 export 阶段重新签名，因此最终 IPA 才是上传前检查对象。
+
+后续构建 26（1.2.0）的最终 IPA 已通过本机签名检查和 Apple 处理检查（VALID），并已重新提交审核。2026-09-28 核对时状态为 WAITING_FOR_REVIEW；这不等于已经获准上架。
+
+## 当前项目配置
+
+- App ID：`6811335132`；bundle ID：`com.misswell.macpilot.remote`；Team：`U8U443D7ZL`。
+- `iOS/MacPilotRemote/project.yml` 是 XcodeGen 配置源，当前使用 `CODE_SIGN_STYLE: Automatic`。
+- `iOS/MacPilotRemote/ExportOptions.plist` 使用 `method=app-store-connect`、`signingStyle=automatic`，并指定上述 Team。
+- 允许 Xcode 在导出时管理分发证书和 profile。不要仅因 archive 的签名显示 Apple Development 就切换整个项目的签名策略。
+- 若确需手动分发签名，必须先确认可用 Apple Distribution 签名身份、私钥和与其匹配的有效 App Store profile；不能把临时手动 profile UUID 固化为永久发布配置。
+
+## 上传前：必须检查最终 IPA
+
+- [ ] 核对最终 IPA 中的 bundle ID、版本、构建号和 Team；不得上传旧包或用另一个 archive 的检查结果代替。
+- [ ] 使用新的构建号；改过 `project.yml` 后运行 XcodeGen，并检查生成项目未出现意外的签名覆盖。
+- [ ] 导出方式是 App Store Connect，而不是 development、ad-hoc 或 enterprise。
+- [ ] 解包至新临时目录，运行 `codesign --verify --deep --strict` 检查主 App 及嵌套代码；同时检查签名身份、Team 和实际签名证书。
+- [ ] 用 `security cms -D -i <app>/embedded.mobileprovision` 解析 profile；核对有效期、TeamIdentifier、application-identifier、平台和预期 App Store 类型。
+- [ ] profile 的 `DeveloperCertificates` 必须包含**实际给 App 签名的证书**：比较 DER 证书内容或 SHA-256 指纹，不要只比较显示名称或 profile 名称。另查证书有效期及开发者账户中的撤销状态；本地签名校验不能替代 Apple 的服务器检查。
+- [ ] App Store profile 的 `get-task-allow` 必须为 false，不能带设备白名单 `ProvisionedDevices` 或企业分发的 `ProvisionsAllDevices=true`；这些字段的缺失也不能单独证明 profile 合格。
+- [ ] 核对 App 实际签名 entitlements 均被 profile 授权；存在扩展时，对每个扩展的独立 bundle/profile 重复检查。
+- [ ] 留存 IPA 的 SHA-256、构建号、profile UUID/有效期和签名证书指纹作为发布证据；不记录私钥、密码或 API 凭据。
+
+本地存在“Apple Distribution”这个显示名称不够，签名机器必须能使用对应私钥完成签名。反过来，private key 不应嵌入 IPA 或 profile；profile 内包含的是公开证书。
+
+## 上传后：确认 Apple 接收的就是这个构建
+
+- [ ] 等待该构建号处理为 `VALID`；上传请求成功或上传 ID 返回不等于二进制已通过处理。
+- [ ] 查询 App Store 版本附带的实际 build ID / buildVersion，确认是本次通过检查的新包。
+- [ ] 先执行 `asc review submit ... --dry-run`，确认版本与 build 正确，再执行已获用户授权的 `--confirm` 提交。
+- [ ] 记录提交 ID 与当前审核状态。区分“处理有效”“等待审核”“审核通过”“已上架”；不得把 VALID 当作审核批准。
+- [ ] 如果收到签名错误邮件，对照邮件中的版本和构建号定位原始 IPA，修复后增加构建号、重新导出、重复全套检查，再上传新包。
+
+## 三类凭据不要混淆
+
+- Apple Distribution 证书及其私钥：用于签名；App Store provisioning profile 授权对应 App 和签名证书。
+- App Store Connect API key：用于 asc/API 操作，不会自动替代代码签名证书或生成合格的 IPA。
+- Apple App 专用密码：用于支持它的上传／公证认证，不是签名证书，也不能修复 profile 与签名证书不匹配。
+
+MacPilot 的 Developer ID + notarization 是 **macOS App Store 外**分发流程；不能拿这个流程的证书或“已公证”结论代替 PilotNest 的 iOS App Store 分发检查。
+
+## Apple 官方依据
+
+- [Create an App Store provisioning profile](https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile)：App Store profile 包含分发证书，Xcode 自动签名可管理分发 profile。
+- [TN3125: Inside Code Signing: Provisioning Profiles](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles)：解释 profile 的证书、身份和 entitlement 授权关系。
+- [Distribution methods](https://help.apple.com/xcode/mac/current/en.lproj/dev31de635e5.html)：区分 App Store Connect 与 Developer ID 分发。
