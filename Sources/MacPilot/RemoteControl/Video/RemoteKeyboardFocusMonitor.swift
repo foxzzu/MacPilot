@@ -15,8 +15,11 @@ final class RemoteKeyboardFocusMonitor: @unchecked Sendable {
     init(transport: RemoteVideoTransport) { self.transport = transport }
 
     func start() {
-        queue.async {
-            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+        // The capture is spelled out so the weak self in the timer handler
+        // differs from an explicit strong capture, not an implicit one —
+        // warnings-as-errors promotes the ownership mismatch to an error.
+        queue.async { [self] in
+            let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now(), repeating: .milliseconds(500))
             timer.setEventHandler { [weak self] in self?.poll() }
             self.timer = timer; timer.resume()
