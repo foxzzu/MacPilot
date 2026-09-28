@@ -69,6 +69,17 @@ call sites are untouched.
 
 ## Wire format
 
+App Store phone versions 1.0/1.1 decode handshake capabilities as a closed
+enum containing only `lock`, `displayOff`, `wake`, and `unlock`. Adding an
+unknown case breaks the whole handshake even while protocol version remains 1.
+For a client hello without `features`, the Mac sends only those four cases.
+New clients declare supported capability strings in `features`; the Mac filters
+its typed hello through `RemoteCapability.negotiated`. The first feature-aware
+1.2 clients declared only `remoteDesktop`, which also proves they understand the
+three input cases. Bonjour TXT capabilities remain extensible strings: old
+discovery code ignores unknown values. Regression tests freeze the published
+phone enum and exercise hello, authentication, and encrypted state retrieval.
+
 Every message is preceded by a 4 byte big endian length. The first body byte
 selects the encoding:
 

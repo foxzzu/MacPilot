@@ -347,7 +347,7 @@ final class RemoteConnectionManager {
             clientID: UUID(uuidString: clientID),
             clientName: clientName,
             clientNonce: nonce,
-            features: ["remoteDesktop"]
+            features: RemoteCapability.allCases.filter { $0 != .dockGroups }.map(\.rawValue)
         )
         try? sendPlain(hello)
     }

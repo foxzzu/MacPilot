@@ -63,15 +63,55 @@ struct RemoteVideoTests {
         #expect(response.success)
     }
 
-    @Test func legacyPhonesNeverReceiveUnknownDesktopOrDockCapabilityCases() {
+    @Test func legacyPhonesReceiveOnlyOriginalScreenControlCapabilities() {
         let advertised: [RemoteCapability] = [.lock, .realtimeInput, .inputPressureStream, .dockGroups, .remoteDesktop]
-        #expect(RemoteCapability.negotiated(advertised, features: nil) == [.lock, .realtimeInput, .inputPressureStream])
+        #expect(RemoteCapability.negotiated(advertised, features: nil) == [.lock])
     }
 
     @Test func newPhonesReceiveOnlyTheFeaturesTheyDeclared() {
         let advertised: [RemoteCapability] = [.realtimeInput, .dockGroups, .remoteDesktop]
         #expect(RemoteCapability.negotiated(advertised, features: ["remoteDesktop"]) == [.realtimeInput, .remoteDesktop])
         #expect(RemoteCapability.negotiated(advertised, features: ["remoteDesktop", "dockGroups"]) == advertised)
+    }
+
+    /// Frozen vocabulary from the published 1.0/1.1 phone app, deliberately
+    /// independent of today's enum so additions cannot silently weaken this test.
+    private enum AppStoreCapability: String, Decodable {
+        case lock, displayOff, wake, unlock
+    }
+
+    private struct AppStoreHello: Decodable {
+        let kind: String
+        let protocolVersion: Int
+        let capabilities: [AppStoreCapability]?
+    }
+
+    @Test func unfilteredNewCapabilitiesReproducePublishedPhoneDecodeFailure() throws {
+        let hello = RemoteHandshakeMessage(kind: .serverHello, capabilities: RemoteCapability.allCases)
+        let data = try JSONEncoder().encode(hello)
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(AppStoreHello.self, from: data) }
+    }
+
+    @Test func actualServerHelloDecodesWithPublishedPhoneVocabulary() throws {
+        for features: [String]? in [nil, [], ["futureUnknownFeature"]] {
+            let hello = RemoteHandshakeMessage(
+                kind: .serverHello,
+                capabilities: RemoteCapability.negotiated(RemoteCapability.allCases, features: features)
+            )
+            var wire = try RemoteFrameCodec.encodePlain(hello)
+            let body = try #require(RemoteFrameCodec.extractFrames(from: &wire).first)
+            let oldHello = try JSONDecoder().decode(AppStoreHello.self, from: Data(body.dropFirst()))
+            #expect(oldHello.kind == "serverHello")
+            #expect(oldHello.protocolVersion == 1)
+            #expect(oldHello.capabilities?.map(\.rawValue) == ["lock", "displayOff", "wake", "unlock"])
+        }
+    }
+
+    @Test func inputCapabilitiesCanBeNegotiatedIndividually() {
+        #expect(RemoteCapability.negotiated(RemoteCapability.allCases, features: ["realtimeInput"]) ==
+            [.lock, .displayOff, .wake, .unlock, .realtimeInput])
+        #expect(RemoteCapability.negotiated(RemoteCapability.allCases, features: ["remoteDesktop"]) ==
+            RemoteCapability.allCases.filter { $0 != .dockGroups })
     }
 
     @Test func videoCapabilitiesNeverChangeExistingInputEventNumbers() {

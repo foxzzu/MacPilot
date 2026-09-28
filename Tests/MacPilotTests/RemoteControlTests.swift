@@ -794,6 +794,79 @@ struct RemoteConnectionIdleWatchdogTests {
         }
     }
 
+    private func send(_ data: Data, on client: NWConnection) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            client.send(content: data, completion: .contentProcessed { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            })
+        }
+    }
+
+    private func receiveFrame(on client: NWConnection) async throws -> Data {
+        var buffer = Data()
+        while true {
+            let chunk: Data = try await withCheckedThrowingContinuation { continuation in
+                client.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, complete, error in
+                    if let error { continuation.resume(throwing: error) }
+                    else if let data, !data.isEmpty { continuation.resume(returning: data) }
+                    else { continuation.resume(throwing: HarnessError.noPort) }
+                }
+            }
+            buffer.append(chunk)
+            if let frame = try RemoteFrameCodec.extractFrames(from: &buffer).first { return frame }
+        }
+    }
+
+    private enum PublishedCapability: String, Decodable {
+        case lock, displayOff, wake, unlock
+    }
+
+    private struct PublishedHello: Decodable {
+        let capabilities: [PublishedCapability]
+        let serverNonce: Data
+        let paired: Bool
+    }
+
+    @Test("published phone vocabulary survives hello and encrypted authentication")
+    func publishedPhoneCanAuthenticateAndReadState() async throws {
+        let harness = try await startHarness(idleTimeout: 5, idleCheckInterval: 0.1)
+        defer { harness.listener.cancel(); harness.box.connection?.close() }
+        let clientID = UUID()
+        let key = RemoteCrypto.randomData(count: RemoteCrypto.pairingKeyLength)
+        #expect(harness.host.deviceStore.storePairingKey(key, for: clientID.uuidString))
+        let client = try await connectClient(to: harness.port)
+        defer { client.cancel() }
+        let nonce = RemoteCrypto.randomData(count: RemoteCrypto.nonceLength)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .clientHello, clientID: clientID, clientName: "Published Phone", clientNonce: nonce
+        )), on: client)
+        let helloFrame = try await receiveFrame(on: client)
+        // Decode with the frozen App Store enum, not the current shared model.
+        let hello = try RemoteFrameCodec.decodePlain(PublishedHello.self, from: helloFrame)
+        #expect(hello.capabilities.map(\.rawValue) == ["lock", "displayOff", "wake", "unlock"])
+        #expect(hello.paired)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .authRequest,
+            proof: RemoteCrypto.clientProof(pairingKey: key, clientNonce: nonce, serverNonce: hello.serverNonce)
+        )), on: client)
+        let authFrame = try await receiveFrame(on: client)
+        let auth = try RemoteFrameCodec.decodePlain(RemoteHandshakeMessage.self, from: authFrame)
+        #expect(auth.kind == .authResult)
+        #expect(auth.errorCode == nil)
+        #expect(auth.proof == RemoteCrypto.serverProof(pairingKey: key, clientNonce: nonce, serverNonce: hello.serverNonce))
+        let session = RemoteCrypto.sessionKey(pairingKey: key, clientNonce: nonce, serverNonce: hello.serverNonce)
+        let request = RemoteRequest(command: .getState, sequence: 1)
+        try await send(RemoteFrameCodec.encodeSecure(request, key: session, sequence: 1), on: client)
+        let responseFrame = try await receiveFrame(on: client)
+        let responseBody = try RemoteFrameCodec.decodeSecure(responseFrame, key: session).plaintext
+        let response = try JSONDecoder().decode(RemoteResponse.self, from: responseBody)
+        #expect(response.requestID == request.requestID)
+        #expect(response.success)
+        #expect(response.state != nil)
+        #expect(harness.host.closed == 0)
+    }
+
     /// A client that goes silent while its socket stays open — a suspended
     /// iPhone — must be dropped instead of being counted as connected forever.
     @Test("a silent client is reaped once its window lapses")
