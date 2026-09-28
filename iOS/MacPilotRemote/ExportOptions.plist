@@ -8,15 +8,8 @@
 	<false/>
 	<key>method</key>
 	<string>app-store-connect</string>
-	<key>provisioningProfiles</key>
-	<dict>
-		<key>com.misswell.macpilot.remote</key>
-		<string>df12e579-3dec-4e63-b2df-86c5e2d37281</string>
-	</dict>
-	<key>signingCertificate</key>
-	<string>Apple Distribution</string>
 	<key>signingStyle</key>
-	<string>manual</string>
+	<string>automatic</string>
 	<key>teamID</key>
 	<string>U8U443D7ZL</string>
 	<key>uploadSymbols</key>

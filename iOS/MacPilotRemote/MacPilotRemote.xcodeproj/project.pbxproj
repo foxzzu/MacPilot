@@ -444,6 +444,7 @@
 					};
 					BF89C0BED59832E585A6F654 = {
 						DevelopmentTeam = U8U443D7ZL;
+						ProvisioningStyle = Automatic;
 					};
 					F2534AA8744243E3E4711BF2 = {
 						DevelopmentTeam = U8U443D7ZL;
@@ -643,7 +644,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -663,9 +664,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "Apple Distribution";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 24;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 25;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MacPilotRemote/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -675,7 +675,6 @@
 				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.misswell.macpilot.remote;
 				PRODUCT_NAME = PilotNest;
-				PROVISIONING_PROFILE_SPECIFIER = "df12e579-3dec-4e63-b2df-86c5e2d37281";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
