@@ -34,11 +34,25 @@ final class RemoteDiscoveryService: ObservableObject {
     }
 
     private var browser: NWBrowser?
+    /// Whether the current browser last reported itself usable. iOS tears down
+    /// the DNS-SD session behind the browser while the app is suspended, so a
+    /// browser carried across a background/foreground turn reports failed or
+    /// simply stops delivering results; it must be recreated, never reused.
+    private var isBrowserUsable = false
     private var browseGeneration = 0
     private let queue = DispatchQueue(label: "com.misswell.macpilot.remote.ios.browser")
 
     func start() {
-        guard browser == nil else { return }
+        if let browser {
+            if isBrowserUsable {
+                // Still browsing; results arrive as changes.
+                return
+            }
+            // A browser that reported failed would otherwise block every later
+            // start() forever; recreate it.
+            browser.cancel()
+            self.browser = nil
+        }
         browseGeneration += 1
         let generation = browseGeneration
         let parameters = NWParameters.tcp
@@ -64,8 +78,20 @@ final class RemoteDiscoveryService: ObservableObject {
             }
         }
         self.browser = browser
+        // Optimistic until the state handler reports otherwise: a browser that
+        // is still preparing must not be churned by a concurrent start().
+        isBrowserUsable = true
         browser.start(queue: queue)
         isBrowsing = true
+    }
+
+    /// Recreates the browse from scratch. Called when the app returns to the
+    /// foreground: the suspended browser cannot be trusted to re-deliver its
+    /// results, and every dial raced against its stale endpoints would keep
+    /// failing even though the Mac is reachable.
+    func restart() {
+        stop()
+        start()
     }
 
     func stop() {
@@ -90,10 +116,12 @@ final class RemoteDiscoveryService: ObservableObject {
     private func handleState(_ state: NWBrowser.State) {
         switch state {
         case .ready:
+            isBrowserUsable = true
             isBrowsing = true
             lastError = nil
             isPermissionDenied = false
         case .failed(let error):
+            isBrowserUsable = false
             isBrowsing = false
             lastError = error.localizedDescription
             Self.log.error("browser failed: \(error.localizedDescription, privacy: .public)")
@@ -102,6 +130,7 @@ final class RemoteDiscoveryService: ObservableObject {
                 isPermissionDenied = true
             }
         case .cancelled:
+            isBrowserUsable = false
             isBrowsing = false
         default:
             break

@@ -277,6 +277,13 @@ final class RemoteAppModel: ObservableObject {
         switch phase {
         case .active:
             isForeground = true
+            // iOS tears down the DNS-SD session behind the browse while the app
+            // is suspended: the browser carried across either reports failed or
+            // never re-delivers its results, so every dial would race against
+            // stale endpoints and the Mac would never be found again. Rebuild
+            // discovery before the reconnect race starts.
+            discovery.restart()
+            appendLinkDiagnostic("foreground: discovery rebuilt")
             // Re-arm with a fresh, tight cadence and an immediate Bluetooth
             // advertisement: opening the app is exactly when the user expects a
             // connection, and the radio can have moved on while it was away.
