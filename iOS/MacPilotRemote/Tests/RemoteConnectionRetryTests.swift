@@ -20,4 +20,19 @@ struct RemoteConnectionRetryTests {
         #expect(RemoteAppModel.shouldRetryDial(isTransportReady: false, startedAt: started, now: now))
         #expect(!RemoteAppModel.shouldRetryDial(isTransportReady: false, startedAt: started, now: Date(timeIntervalSinceReferenceDate: 103.9)))
     }
+
+    @Test func foregroundDisconnectRestartsEvenWhenAnOldSupervisorIsStillFinishing() {
+        #expect(RemoteAppModel.shouldRestartSupervisorAfterDisconnect(
+            isForeground: true,
+            hasPairingTarget: false
+        ))
+        #expect(!RemoteAppModel.shouldRestartSupervisorAfterDisconnect(
+            isForeground: false,
+            hasPairingTarget: false
+        ))
+        #expect(!RemoteAppModel.shouldRestartSupervisorAfterDisconnect(
+            isForeground: true,
+            hasPairingTarget: true
+        ))
+    }
 }

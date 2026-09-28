@@ -33,6 +33,16 @@ final class RemoteAppModel: ObservableObject {
         !isTransportReady && now.timeIntervalSince(startedAt) >= dialRetryTimeout
     }
 
+    /// A disconnect must replace the current supervisor even when its task is
+    /// still winding down. Otherwise the stale task handle can make
+    /// `startConnectSupervisor()` return without installing a new retry loop.
+    static func shouldRestartSupervisorAfterDisconnect(
+        isForeground: Bool,
+        hasPairingTarget: Bool
+    ) -> Bool {
+        isForeground && !hasPairingTarget
+    }
+
     struct PairingPrompt: Identifiable, Equatable {
         let id = UUID()
         let name: String
@@ -357,10 +367,18 @@ final class RemoteAppModel: ObservableObject {
                 return
             }
             self.errorKey = error.messageKey
-            self.connectionState = .failed(self.text(error.messageKey))
             if self.pairingTarget != nil {
+                self.connectionState = .failed(self.text(error.messageKey))
                 self.pairingPrompt = nil
                 self.stopConnectSupervisor()
+            } else {
+                // `fail()` reports the error without necessarily emitting a
+                // separate disconnect callback. Keep the foreground retry
+                // loop alive for this path too.
+                self.connectionState = .reconnecting
+                self.refreshTransportDescription()
+                self.startBLEFallback()
+                self.restartConnectSupervisor()
             }
         }
         manager.onDisconnected = { [weak self, weak manager] in
@@ -886,7 +904,12 @@ final class RemoteAppModel: ObservableObject {
         connectionState = hasEverConnected ? .reconnecting : .failed(text("errorNetwork"))
         refreshTransportDescription()
         startBLEFallback()
-        startConnectSupervisor()
+        if Self.shouldRestartSupervisorAfterDisconnect(
+            isForeground: isForeground,
+            hasPairingTarget: pairingTarget != nil
+        ) {
+            restartConnectSupervisor()
+        }
     }
 
     /// User driven connect from the Devices tab, used for first-time pairing.
