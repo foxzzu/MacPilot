@@ -57,6 +57,7 @@ final class RemoteConnectionManager {
     private var sentSequence: UInt64 = 0
     private var pendingRequests: [UUID: CheckedContinuation<RemoteResponse, Error>] = [:]
 
+    private var allowsPairing = true
     private var clientID: String = ""
     private var clientName: String = "iPhone"
     private var clientNonce: Data?
@@ -122,9 +123,11 @@ final class RemoteConnectionManager {
         deviceID: UUID?,
         name: String,
         clientID: String,
-        clientName: String
+        clientName: String,
+        allowsPairing: Bool = true
     ) {
         disconnect(report: false)
+        self.allowsPairing = allowsPairing
         self.clientID = clientID
         self.clientName = clientName
         self.targetDeviceID = deviceID
@@ -391,6 +394,13 @@ final class RemoteConnectionManager {
             onStateChange?(.authenticating)
             let proof = RemoteCrypto.clientProof(pairingKey: storedKey, clientNonce: clientNonce, serverNonce: nonce)
             try? sendPlain(RemoteHandshakeMessage(kind: .authRequest, proof: proof))
+            return
+        }
+
+        // A background upgrade cannot open a new pairing exchange or interrupt
+        // the authenticated session already carrying the user's commands.
+        guard allowsPairing else {
+            fail(.notPaired)
             return
         }
 

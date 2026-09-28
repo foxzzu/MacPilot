@@ -318,6 +318,10 @@ final class RemoteAppModel: ObservableObject {
         manager.onPairingPrompt = { [weak self, weak manager] _, name in
             guard let self, let manager else { return }
             if !self.isCurrent(manager) {
+                guard !self.connection.isReady else {
+                    self.removeCandidate(manager)
+                    return
+                }
                 guard self.candidates.contains(where: { $0.manager === manager }) else { return }
                 // Two candidates can reach the pairing exchange, but the Mac
                 // shows exactly one code, so only one link may carry it.
@@ -701,7 +705,8 @@ final class RemoteAppModel: ObservableObject {
             deviceID: deviceID,
             name: name,
             clientID: store.clientID,
-            clientName: store.clientName
+            clientName: store.clientName,
+            allowsPairing: isRacingFirstPairing
         )
     }
 

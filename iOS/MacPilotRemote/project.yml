@@ -42,6 +42,20 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         SUPPORTS_MACCATALYST: NO
 
+  MacPilotRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: MacPilotRemote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.misswell.macpilot.remote.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PilotNest.app/PilotNest"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
   MacPilotRemoteScreenshots:
     type: bundle.ui-testing
     platform: iOS
@@ -63,6 +77,10 @@ schemes:
         MacPilotRemote: all
     archive:
       config: Release
+    test:
+      config: Debug
+      targets:
+        - MacPilotRemoteTests
   MacPilotRemoteScreenshots:
     build:
       targets:
