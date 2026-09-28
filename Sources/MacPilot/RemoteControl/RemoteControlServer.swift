@@ -188,7 +188,7 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
             deviceID: deviceStore.deviceID,
             name: deviceStore.deviceName,
             version: AppVersionInfo.current().version.description,
-            capabilities: Set(advertisedCapabilities)
+            capabilities: Set(advertisedCapabilities + [.remoteDesktop])
         )
         listener.service = NWListener.Service(
             name: Self.bonjourName(from: info.name),

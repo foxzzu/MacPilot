@@ -943,6 +943,23 @@ final class RemoteAppModel: ObservableObject {
         case offline
     }
 
+    @Published var desktopModifiers: UInt8 = 0
+
+    var supportsRemoteDesktop: Bool { connection.supportsRemoteDesktop }
+    func beginRemoteVideo(displayID: UInt32?) async throws -> (RemoteVideoOffer, String) {
+        try await connection.beginRemoteVideo(displayID: displayID)
+    }
+    func endRemoteVideo() async { _ = try? await connection.send(.endRemoteVideo, timeout: 3) }
+    func desktopClick(_ pointer: RemotePointerRequest) async -> Bool {
+        guard let data = try? JSONEncoder().encode(pointer) else { return false }
+        return (try? await connection.send(.remotePointer, payload: data, timeout: 3).success) == true
+    }
+    @discardableResult
+    func desktopKey(_ key: RemoteKeyRequest) async -> Bool {
+        guard let data = try? JSONEncoder().encode(key) else { return false }
+        return (try? await connection.send(.remoteKey, payload: data, timeout: 3).success) == true
+    }
+
     // MARK: - Realtime input (trackpad)
 
     /// The Mac advertised the realtime input channel. An older Mac build did
@@ -983,10 +1000,23 @@ final class RemoteAppModel: ObservableObject {
         connection.sendRealtimeInput(batch)
     }
 
-    func beginTextInput() async -> Bool { await connection.beginTextInput() }
+    func beginTextInput(focused: Bool = false) async -> Bool { await connection.beginTextInput(focused: focused) }
 
     func sendTextInput(_ operation: RemoteTextInputOperation) async -> Bool {
-        await connection.sendTextInput(operation)
+        let modifiers = desktopModifiers
+        desktopModifiers = 0
+        if modifiers != 0, supportsRemoteDesktop {
+            switch operation {
+            case .insert(let text) where text.count == 1:
+                return await desktopKey(RemoteKeyRequest(key: .character, modifiers: modifiers, character: text))
+            case .deleteBackward:
+                return await desktopKey(RemoteKeyRequest(key: .delete, modifiers: modifiers))
+            case .returnKey:
+                return await desktopKey(RemoteKeyRequest(key: .enter, modifiers: modifiers))
+            default: break
+            }
+        }
+        return await connection.sendTextInput(operation)
     }
 
     func endTextInput() async { await connection.endTextInput() }

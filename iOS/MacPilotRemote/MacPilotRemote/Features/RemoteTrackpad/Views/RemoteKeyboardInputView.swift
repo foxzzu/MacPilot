@@ -6,6 +6,7 @@ import UIKit
 /// the trackpad remains visible. Marked IME text stays local until committed.
 struct RemoteKeyboardInputView: UIViewRepresentable {
     @ObservedObject var model: RemoteTrackpadModel
+    var usesSceneOrientation = false
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
@@ -29,7 +30,7 @@ struct RemoteKeyboardInputView: UIViewRepresentable {
     func updateUIView(_ view: KeyboardTextView, context: Context) {
         if model.keyboardActive {
             guard !view.isFirstResponder else { return }
-            context.coordinator.summonKeyboard(view: view, model: model)
+            context.coordinator.summonKeyboard(view: view, model: model, usesSceneOrientation: usesSceneOrientation)
         } else {
             context.coordinator.cancelFocus()
             if view.isFirstResponder {
@@ -47,9 +48,9 @@ struct RemoteKeyboardInputView: UIViewRepresentable {
         /// in a landscape hold wait for the rotation the model requested to
         /// land before summoning it. Bounded: a rotation that never lands
         /// still presents the keyboard.
-        func summonKeyboard(view: KeyboardTextView, model: RemoteTrackpadModel) {
+        func summonKeyboard(view: KeyboardTextView, model: RemoteTrackpadModel, usesSceneOrientation: Bool) {
             guard view.window != nil, !summonInFlight else { return }
-            let desired = InterfaceOrientationController.mask(for: model.orientation)
+            let desired = usesSceneOrientation ? InterfaceOrientationController.shared.supportedMask : InterfaceOrientationController.mask(for: model.orientation)
             let current = view.window?.windowScene?.interfaceOrientation
             let settled: Bool
             if current == nil {
@@ -70,7 +71,7 @@ struct RemoteKeyboardInputView: UIViewRepresentable {
                 guard let self else { return }
                 self.summonInFlight = false
                 guard let view, let model, model.keyboardActive else { return }
-                self.summonKeyboard(view: view, model: model)
+                self.summonKeyboard(view: view, model: model, usesSceneOrientation: usesSceneOrientation)
             }
         }
 

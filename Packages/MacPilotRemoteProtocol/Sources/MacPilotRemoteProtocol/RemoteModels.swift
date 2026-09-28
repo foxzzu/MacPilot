@@ -130,6 +130,8 @@ public enum RemoteErrorCode: String, Codable, Sendable, Equatable, CaseIterable 
     /// No output device on this Mac exposes a volume control.
     case volumeUnavailable
     case textInputUnavailable
+    case screenRecordingPermissionRequired
+    case remoteVideoUnavailable
 
     case replayDetected
     case invalidMessage
@@ -326,6 +328,7 @@ public struct RemoteHandshakeMessage: Codable, Sendable, Equatable {
     public var proof: Data?
     public var pairCode: String?
     public var capabilities: [RemoteCapability]?
+    public var features: [String]?
     public var errorCode: RemoteErrorCode?
     public var errorMessage: String?
 
@@ -343,6 +346,7 @@ public struct RemoteHandshakeMessage: Codable, Sendable, Equatable {
         proof: Data? = nil,
         pairCode: String? = nil,
         capabilities: [RemoteCapability]? = nil,
+        features: [String]? = nil,
         errorCode: RemoteErrorCode? = nil,
         errorMessage: String? = nil
     ) {
@@ -359,6 +363,7 @@ public struct RemoteHandshakeMessage: Codable, Sendable, Equatable {
         self.proof = proof
         self.pairCode = pairCode
         self.capabilities = capabilities
+        self.features = features
         self.errorCode = errorCode
         self.errorMessage = errorMessage
     }

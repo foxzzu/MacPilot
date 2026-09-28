@@ -1,0 +1,118 @@
+import Foundation
+import MacPilotRemoteProtocol
+import Network
+
+/// One bounded encrypted video socket. No callbacks enter the control queue.
+/// Mutable socket/codec state belongs to queue; the lock only reserves the
+/// single send slot before scheduling work, preventing an async backlog.
+public final class RemoteVideoTransport: @unchecked Sendable {
+    public let queue = DispatchQueue(label: "com.misswell.macpilot.video.network", qos: .utility)
+    private let connection: NWConnection
+    private var sender: RemoteVideoCodec
+    private var receiver: RemoteVideoCodec
+    private var buffer = Data()
+    private var sendCounter: UInt64 = 0
+    private var activeSend: UInt64?
+    private let lock = NSLock()
+    private var busy = false
+    private var closed = false
+    public var onReady: (@Sendable () -> Void)?
+    public var onPacket: (@Sendable (RemoteVideoPacket) -> Void)?
+    public var onFailure: (@Sendable () -> Void)?
+    public var onSendCompleted: (@Sendable (Double) -> Void)?
+
+    public init(connection: NWConnection, secret: Data, isServer: Bool) {
+        self.connection = connection
+        sender = RemoteVideoCodec(secret: secret, serverToClient: isServer)
+        receiver = RemoteVideoCodec(secret: secret, serverToClient: !isServer)
+    }
+
+    public static func parameters() -> NWParameters {
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        tcp.connectionTimeout = 5
+        tcp.enableKeepalive = true
+        tcp.keepaliveIdle = 5
+        tcp.keepaliveInterval = 2
+        tcp.keepaliveCount = 3
+        let parameters = NWParameters(tls: nil, tcp: tcp)
+        parameters.includePeerToPeer = true
+        return parameters
+    }
+
+    public func start() {
+        connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .ready: self.onReady?(); self.receive()
+            case .failed, .cancelled: self.fail()
+            default: break
+            }
+        }
+        connection.start(queue: queue)
+    }
+
+    /// False means congestion, never "queued for later". An encoder that
+    /// drops a reference frame must force an IDR before resuming.
+    @discardableResult
+    public func send(_ packet: RemoteVideoPacket) -> Bool {
+        let reserved = lock.withLock {
+            guard !closed, !busy else { return false }
+            busy = true
+            return true
+        }
+        guard reserved else { return false }
+        queue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let data = try self.sender.encode(packet)
+                let start = ProcessInfo.processInfo.systemUptime
+                self.sendCounter += 1
+                let sendID = self.sendCounter
+                self.activeSend = sendID
+                self.queue.asyncAfter(deadline: .now() + 8) { [weak self] in
+                    guard let self, self.activeSend == sendID else { return }
+                    self.fail()
+                }
+                self.connection.send(content: data, completion: .contentProcessed { [weak self] error in
+                    guard let self else { return }
+                    self.activeSend = nil
+                    self.lock.withLock { self.busy = false }
+                    if error != nil { self.fail() }
+                    else { self.onSendCompleted?((ProcessInfo.processInfo.systemUptime - start) * 1000) }
+                })
+            } catch { self.fail() }
+        }
+        return true
+    }
+
+    public func cancel() {
+        lock.withLock { closed = true }
+        connection.cancel()
+    }
+
+    private func fail() {
+        let notify = lock.withLock {
+            guard !closed else { return false }
+            closed = true
+            return true
+        }
+        connection.cancel()
+        if notify { onFailure?() }
+    }
+
+    private func receive() {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 << 10) { [weak self] data, _, done, error in
+            guard let self else { return }
+            if let data {
+                self.buffer.append(data)
+                do {
+                    let frames = try RemoteVideoCodec.extractFrames(from: &self.buffer)
+                    for frame in frames { self.onPacket?(try self.receiver.decode(frame)) }
+                } catch { self.fail(); return }
+            }
+            if done || error != nil { self.fail() }
+            else if !self.lock.withLock({ self.closed }) { self.receive() }
+        }
+    }
+}

@@ -473,3 +473,10 @@ python3 Scripts/generate-app-icon.py   # requires Pillow
 
 Keychain backed types are tested through the in-memory `SecretStore`, so the test
 process never triggers a Keychain access prompt.
+
+## Remote desktop mode
+
+PilotNest’s Remote control entry combines an independent encrypted H.264 screen
+channel with the existing trackpad and keyboard. LAN/AWDL carry video; Bluetooth
+keeps input only. See [the implementation and validation report](REMOTE_DESKTOP.md)
+for the video wire format, lifecycle, compatibility gates and measurement limits.

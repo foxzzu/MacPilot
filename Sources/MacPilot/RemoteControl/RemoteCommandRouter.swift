@@ -72,7 +72,8 @@ struct RemoteCommandRouter {
             return await respondToDockGroupLaunch(request, started: started)
 
         case .beginRealtimeInput, .endRealtimeInput,
-             .beginTextInput, .textInput, .endTextInput:
+             .beginTextInput, .textInput, .endTextInput,
+             .beginRemoteVideo, .endRemoteVideo, .remotePointer, .remoteKey:
             // Intercepted by `RemoteConnection` before the router: they arm
             // per-connection session state, which the router never sees.
             return failure(for: request, code: .unsupportedCommand)

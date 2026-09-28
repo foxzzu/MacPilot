@@ -470,7 +470,7 @@ final class RemoteTrackpadModel: ObservableObject {
     /// click focused has actually become first responder on the Mac.
     private static let keyboardProbeDelay = Duration.milliseconds(120)
 
-    private func requestKeyboard() {
+    func requestKeyboard(focused: Bool = false) {
         guard !keyboardActive, keyboardRequestTask == nil, let appModel else { return }
         keyboardRequestTask = Task { [weak self] in
             try? await Task.sleep(for: Self.keyboardProbeDelay)
@@ -478,7 +478,7 @@ final class RemoteTrackpadModel: ObservableObject {
             // previous end command before starting the new session.
             await self?.textInputTask?.value
             guard !Task.isCancelled else { return }
-            let accepted = await appModel.beginTextInput()
+            let accepted = await appModel.beginTextInput(focused: focused)
             guard let self else { return }
             self.keyboardRequestTask = nil
             guard self.phase == .active, !Task.isCancelled else { return }

@@ -17,6 +17,7 @@ struct HomeView: View {
 
     @State private var trackpadModel: RemoteTrackpadModel?
     @State private var trackpadVisible = false
+    @State private var desktopVisible = false
     /// Text key of why the trackpad entry refused a tap, shown as an alert.
     @State private var trackpadHintKey: String?
 
@@ -25,6 +26,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     deviceCard
+                    desktopEntry
                     actionGrid
                     // Hidden entirely on a Mac that predates the capability:
                     // the trackpad explains itself on tap, but a whole dead
@@ -44,7 +46,7 @@ struct HomeView: View {
             }
             // The trackpad page must own the whole screen: while it is up the
             // tab bar goes away, otherwise it floats over the touch surface.
-            .toolbar(trackpadVisible ? .hidden : .visible, for: .tabBar)
+            .toolbar((trackpadVisible || desktopVisible) ? .hidden : .visible, for: .tabBar)
             .background(Color(.systemGroupedBackground))
             .navigationTitle(appModel.text("tabHome"))
             .navigationBarTitleDisplayMode(.inline)
@@ -56,8 +58,12 @@ struct HomeView: View {
             // inside extends under the system chrome; the content itself
             // respects the safe areas.
             if trackpadVisible, let trackpadModel {
-                TrackpadContainerView(model: trackpadModel, onClose: closeTrackpad)
-                    .transition(.opacity)
+                if desktopVisible {
+                    RemoteDesktopView(trackpad: trackpadModel, onClose: closeTrackpad)
+                } else {
+                    TrackpadContainerView(model: trackpadModel, onClose: closeTrackpad)
+                        .transition(.opacity)
+                }
             }
         }
         .onChange(of: appModel.connectionState) { _, _ in
@@ -78,6 +84,29 @@ struct HomeView: View {
         )
     }
 
+    private var desktopEntry: some View {
+        Button {
+            guard appModel.connectionState.isConnected, appModel.supportsRealtimeInput else {
+                trackpadHintKey = "trackpadNotConnected"; return
+            }
+            desktopVisible = true
+            openTrackpad()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "display").font(.title3)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(appModel.text("desktopTitle")).font(.headline)
+                    Text(appModel.text("desktopHint")).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption)
+            }
+            .padding(16)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Trackpad
 
     private func openTrackpad() {
@@ -93,6 +122,7 @@ struct HomeView: View {
         trackpadModel?.close()
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(0.34))
+            desktopVisible = false
             trackpadVisible = false
             trackpadModel = nil
         }

@@ -61,6 +61,8 @@ final class RemoteInputCoordinator {
         self.logHandler = log
     }
 
+    func isSessionArmed(_ id: UUID) -> Bool { armedConnections.contains(id) }
+
     var hasActiveSession: Bool { !armedConnections.isEmpty }
 
     /// True while pointer motion rides the virtual HID device. The begin
@@ -103,8 +105,8 @@ final class RemoteInputCoordinator {
         endSession(connectionID: connectionID)
     }
 
-    func beginTextInput(connectionID: UUID) -> Bool {
-        armedConnections.contains(connectionID) && textInput.begin(connectionID: connectionID)
+    func beginTextInput(connectionID: UUID, focused: Bool = false) -> Bool {
+        armedConnections.contains(connectionID) && textInput.begin(connectionID: connectionID, focused: focused)
     }
 
     func handleTextInput(_ operation: RemoteTextInputOperation, connectionID: UUID) -> Bool {

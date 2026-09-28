@@ -80,6 +80,21 @@ final class RemoteConnectionManager {
     var isReady: Bool { phase == .ready }
     var isPairing: Bool { phase == .pairing }
     /// The Mac accepts realtime input batches (the trackpad channel).
+    var supportsRemoteDesktop: Bool { serverCapabilities.contains(.remoteDesktop) }
+
+    func beginRemoteVideo(displayID: UInt32?) async throws -> (RemoteVideoOffer, String) {
+        guard supportsRemoteDesktop, transportKind == .network, let host = transport?.remoteHost else {
+            throw RemoteConnectionError.server(.remoteVideoUnavailable)
+        }
+        let response = try await send(.beginRemoteVideo, payload: JSONEncoder().encode(RemoteDesktopRequest(displayID: displayID)))
+        guard response.success, let data = response.payload else {
+            throw RemoteConnectionError.server(response.error?.code ?? .remoteVideoUnavailable)
+        }
+        let offer = try JSONDecoder().decode(RemoteVideoOffer.self, from: data)
+        guard offer.secret.count == 32, offer.port > 0 else { throw RemoteConnectionError.server(.invalidMessage) }
+        return (offer, host)
+    }
+
     var supportsRealtimeInput: Bool { serverCapabilities.contains(.realtimeInput) }
     /// The Mac reads graded pressure from press events; without it the
     /// trackpad downgrades every press to a plain click.
@@ -252,8 +267,8 @@ final class RemoteConnectionManager {
         _ = try? await send(.endRealtimeInput)
     }
 
-    func beginTextInput() async -> Bool {
-        (try? await send(.beginTextInput, timeout: 3).success) == true
+    func beginTextInput(focused: Bool = false) async -> Bool {
+        (try? await send(.beginTextInput, payload: focused ? Data([1]) : nil, timeout: 3).success) == true
     }
 
     func sendTextInput(_ operation: RemoteTextInputOperation) async -> Bool {
@@ -321,7 +336,8 @@ final class RemoteConnectionManager {
             kind: .clientHello,
             clientID: UUID(uuidString: clientID),
             clientName: clientName,
-            clientNonce: nonce
+            clientNonce: nonce,
+            features: ["remoteDesktop"]
         )
         try? sendPlain(hello)
     }

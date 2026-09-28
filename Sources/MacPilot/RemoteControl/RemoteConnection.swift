@@ -75,6 +75,7 @@ final class RemoteConnection: Identifiable {
     /// True between `beginRealtimeInput` and `endRealtimeInput`/close: the
     /// gate that turns the binary input channel from "exists" into "trusted".
     private var isRealtimeInputArmed = false
+    private var videoSession: RemoteVideoSession?
 
     private var sentSequence: UInt64 = 0
     private var handshakeStartedAt: Date?
@@ -158,6 +159,8 @@ final class RemoteConnection: Identifiable {
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        videoSession?.stop()
+        videoSession = nil
         if isRealtimeInputArmed {
             isRealtimeInputArmed = false
             host?.inputCoordinator.connectionDidClose(connectionID: id)
@@ -200,10 +203,7 @@ final class RemoteConnection: Identifiable {
             host?.remoteLog("connection failed error=\(reason)")
             close()
         case .closed:
-            if !isClosed {
-                isClosed = true
-                host?.remoteConnectionDidClose(self)
-            }
+            close()
         case .connecting, .waiting:
             break
         }
@@ -314,6 +314,7 @@ final class RemoteConnection: Identifiable {
             paired: paired,
             serverNonce: serverNonce,
             capabilities: host.advertisedCapabilities
+                + ((message.features ?? []).contains("remoteDesktop") ? [.remoteDesktop] : [])
         )
         if !paired {
             let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: serverNonce)
@@ -463,6 +464,17 @@ final class RemoteConnection: Identifiable {
             try sendSecure(realtimeInputResponse(for: request), key: key)
         case .beginTextInput, .textInput, .endTextInput:
             try sendSecure(textInputResponse(for: request), key: key)
+        case .beginRemoteVideo:
+            // Capture permission/discovery/listener setup must never block
+            // the ordered drain of subsequent realtime input frames.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let response = await self.desktopResponse(for: request)
+                guard !self.isClosed else { return }
+                try? self.sendSecure(response, key: key)
+            }
+        case .endRemoteVideo, .remotePointer, .remoteKey:
+            try sendSecure(await desktopResponse(for: request), key: key)
         default:
             let response = await router.response(for: request, isAuthenticated: isAuthenticated)
             try sendSecure(response, key: key)
@@ -528,7 +540,7 @@ final class RemoteConnection: Identifiable {
         let success: Bool
         switch request.command {
         case .beginTextInput:
-            success = host.inputCoordinator.beginTextInput(connectionID: id)
+            success = host.inputCoordinator.beginTextInput(connectionID: id, focused: request.payload == Data([1]) && videoSession != nil)
         case .textInput:
             guard let operation = try? RemoteTextInputOperation.decoded(from: request.payload) else {
                 return RemoteResponse(requestID: request.requestID, success: false,
@@ -543,6 +555,54 @@ final class RemoteConnection: Identifiable {
         }
         return RemoteResponse(requestID: request.requestID, success: success,
                               error: success ? nil : RemoteError(code: .textInputUnavailable))
+    }
+
+    private func desktopResponse(for request: RemoteRequest) async -> RemoteResponse {
+        guard isAuthenticated, let host else {
+            return RemoteResponse(requestID: request.requestID, success: false, error: RemoteError(code: .unauthenticated))
+        }
+        switch request.command {
+        case .endRemoteVideo:
+            videoSession?.stop(); videoSession = nil
+            return RemoteResponse(requestID: request.requestID, success: true)
+        case .beginRemoteVideo:
+            guard transport.kind == .network else {
+                return RemoteResponse(requestID: request.requestID, success: false, error: RemoteError(code: .remoteVideoUnavailable))
+            }
+            guard let data = request.payload,
+                  let options = try? JSONDecoder().decode(RemoteDesktopRequest.self, from: data) else {
+                return RemoteResponse(requestID: request.requestID, success: false, error: RemoteError(code: .invalidMessage))
+            }
+            videoSession?.stop()
+            let session = RemoteVideoSession()
+            videoSession = session
+            do {
+                let offer = try await session.prepare(displayID: options.displayID)
+                guard !isClosed, videoSession === session else { session.stop(); throw RemoteVideoFailure.transport }
+                return RemoteResponse(requestID: request.requestID, success: true, payload: try JSONEncoder().encode(offer))
+            } catch {
+                session.stop()
+                if videoSession === session { videoSession = nil }
+                return RemoteResponse(requestID: request.requestID, success: false,
+                    error: RemoteError(code: (error as? RemoteVideoFailure) == .permission ? .screenRecordingPermissionRequired : .remoteVideoUnavailable))
+            }
+        case .remotePointer:
+            guard isRealtimeInputArmed, let session = videoSession, let data = request.payload,
+                  let pointer = try? JSONDecoder().decode(RemotePointerRequest.self, from: data),
+                  pointer.displayID == session.displayID else {
+                return RemoteResponse(requestID: request.requestID, success: false, error: RemoteError(code: .invalidMessage))
+            }
+            let accepted = host.inputCoordinator.desktopClick(pointer, connectionID: id)
+            return RemoteResponse(requestID: request.requestID, success: accepted)
+        case .remoteKey:
+            guard isRealtimeInputArmed, let data = request.payload,
+                  let key = try? JSONDecoder().decode(RemoteKeyRequest.self, from: data) else {
+                return RemoteResponse(requestID: request.requestID, success: false, error: RemoteError(code: .invalidMessage))
+            }
+            return RemoteResponse(requestID: request.requestID, success: host.inputCoordinator.desktopKey(key, connectionID: id))
+        default:
+            return RemoteResponse(requestID: request.requestID, success: false, error: RemoteError(code: .unsupportedCommand))
+        }
     }
 
     // MARK: - Sending

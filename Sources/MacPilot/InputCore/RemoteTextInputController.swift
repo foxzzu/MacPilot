@@ -10,14 +10,21 @@ final class RemoteTextInputController {
     private var targets: [UUID: AXUIElement] = [:]
     private let source = CGEventSource(stateID: .hidSystemState)
 
-    func begin(connectionID: UUID) -> Bool {
+    func begin(connectionID: UUID, focused: Bool = false) -> Bool {
         targets.removeValue(forKey: connectionID)
         guard AXIsProcessTrusted(), let point = CGEvent(source: source)?.location else { return false }
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, 0.25)
         var raw: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &raw) == .success,
-              let raw, let target = editableAncestor(of: raw) else { return false }
+        if focused {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &value) == .success,
+                  let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return false }
+            raw = unsafeDowncast(value, to: AXUIElement.self)
+        } else {
+            guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &raw) == .success else { return false }
+        }
+        guard let raw, let target = editableAncestor(of: raw) else { return false }
         if !isFocused(target, system: system) {
             _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue!)
         }

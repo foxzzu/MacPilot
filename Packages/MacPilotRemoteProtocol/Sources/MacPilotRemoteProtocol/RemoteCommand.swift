@@ -38,6 +38,10 @@ public enum RemoteCommand: String, Codable, Sendable, CaseIterable, Equatable {
     /// Launches or activates a single member of one Dock group. Carries a
     /// `RemoteDockGroupLaunchRequest` payload with `appID` set.
     case launchDockGroupApp
+    case beginRemoteVideo
+    case endRemoteVideo
+    case remotePointer
+    case remoteKey
 
     /// Commands that change the machine and therefore always require an
     /// authenticated, encrypted session.
@@ -48,7 +52,8 @@ public enum RemoteCommand: String, Codable, Sendable, CaseIterable, Equatable {
         case .lockScreen, .displayOff, .wakeDisplay, .unlock, .wakeAndUnlock,
              .setBrightness, .setVolume, .beginRealtimeInput, .endRealtimeInput,
              .beginTextInput, .textInput, .endTextInput,
-             .getDockGroups, .launchDockGroup, .launchDockGroupApp:
+             .getDockGroups, .launchDockGroup, .launchDockGroupApp,
+             .beginRemoteVideo, .endRemoteVideo, .remotePointer, .remoteKey:
             return true
         }
     }
@@ -76,4 +81,5 @@ public enum RemoteCapability: String, Codable, Sendable, CaseIterable, Equatable
     /// advertisement would drop the connection on an unknown command rawValue,
     /// so the phone hides the whole section instead of sending it.
     case dockGroups
+    case remoteDesktop
 }
