@@ -26,7 +26,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     deviceCard
-                    desktopEntry
+                    remoteToolsRow
                     actionGrid
                     // Hidden entirely on a Mac that predates the capability:
                     // the trackpad explains itself on tap, but a whole dead
@@ -95,19 +95,30 @@ struct HomeView: View {
             desktopVisible = true
             openTrackpad()
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: "display").font(.title3)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(appModel.text("desktopTitle")).font(.headline)
-                    Text(appModel.text("desktopHint")).font(.caption).foregroundStyle(.secondary)
+                    Text(appModel.text("desktopHint"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption)
             }
-            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .padding(.horizontal, 14)
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+    }
+
+    private var remoteToolsRow: some View {
+        HStack(spacing: 14) {
+            desktopEntry
+            trackpadRow
+        }
     }
 
     // MARK: - Trackpad
@@ -133,14 +144,10 @@ struct HomeView: View {
 
     // MARK: - Device card
 
-    /// Device switcher and trackpad entry share one compact top row. The
-    /// trackpad remains the card's back face when opening it flips.
+    /// The device switcher stays in its own compact card so the two remote
+    /// tools can share a balanced row below it.
     private var deviceCard: some View {
-        HStack(spacing: 0) {
-            deviceSwitcher
-            Divider().padding(.vertical, 12)
-            trackpadRow
-        }
+        deviceSwitcher
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
@@ -217,8 +224,10 @@ struct HomeView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
             }
-            .frame(width: 88, height: 59)
+            .frame(maxWidth: .infinity, minHeight: 72)
+            .padding(.horizontal, 10)
             .contentShape(Rectangle())
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(appModel.text("trackpadEntry"))
