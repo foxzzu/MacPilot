@@ -41,6 +41,9 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
     /// The trackpad's injection pipeline. One coordinator serves every
     /// connection; sessions are armed per connection.
     let inputCoordinator: RemoteInputCoordinator
+    /// Dock groups, when the app wires them in. Advertised as a capability and
+    /// handed to every connection's router.
+    let dockGroups: (any RemoteDockGroupsHosting)?
 
     /// Raised when a pairing code becomes visible so the app can show it.
     var onPairingCodePresented: (@MainActor (String, String) -> Void)?
@@ -76,10 +79,12 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
         deviceStore: RemoteDeviceStore,
         screenControl: MacScreenControlService,
         pairingManager: RemotePairingManager? = nil,
+        dockGroups: (any RemoteDockGroupsHosting)? = nil,
         log: @escaping (String) -> Void = { remoteControlLog($0) }
     ) {
         self.deviceStore = deviceStore
         self.screenControl = screenControl
+        self.dockGroups = dockGroups
         self.logHandler = log
         self.inputCoordinator = RemoteInputCoordinator(log: log)
         self.pairingManager = pairingManager ?? RemotePairingManager(log: log)
@@ -183,7 +188,7 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
             deviceID: deviceStore.deviceID,
             name: deviceStore.deviceName,
             version: AppVersionInfo.current().version.description,
-            capabilities: [.lock, .displayOff, .wake, .unlock, .realtimeInput, .inputPressure, .inputPressureStream]
+            capabilities: Set(advertisedCapabilities)
         )
         listener.service = NWListener.Service(
             name: Self.bonjourName(from: info.name),
@@ -283,6 +288,8 @@ final class RemoteControlServer: ObservableObject, RemoteConnectionHost, Managed
     }
 
     // MARK: - RemoteConnectionHost
+
+    var dockGroupsHosting: (any RemoteDockGroupsHosting)? { dockGroups }
 
     func remoteConnection(
         _ connection: RemoteConnection,

@@ -23,6 +23,26 @@ protocol RemoteConnectionHost: AnyObject {
     func remoteLog(_ message: String)
 }
 
+extension RemoteConnectionHost {
+    /// Dock groups, when the host wires them up. `nil` on hosts without the
+    /// feature (and every test host), which makes the three Dock group
+    /// commands answer `unsupportedCommand`.
+    var dockGroupsHosting: (any RemoteDockGroupsHosting)? { nil }
+
+    /// What the TXT record and `serverHello` advertise. The Dock group
+    /// capability is listed only when the host actually serves groups, so a
+    /// phone never sends a command this build cannot route.
+    var advertisedCapabilities: [RemoteCapability] {
+        var capabilities: [RemoteCapability] = [
+            .lock, .displayOff, .wake, .unlock, .realtimeInput, .inputPressure, .inputPressureStream
+        ]
+        if dockGroupsHosting != nil {
+            capabilities.append(.dockGroups)
+        }
+        return capabilities
+    }
+}
+
 /// One iPhone <-> Mac TCP connection: length prefixed framing, the pairing and
 /// authentication handshake, ChaChaPoly sealed command traffic and replay
 /// protection.
@@ -88,7 +108,11 @@ final class RemoteConnection: Identifiable {
     ) {
         self.transport = transport
         self.host = host
-        self.router = RemoteCommandRouter(service: host.screenControl, log: host.remoteLog)
+        self.router = RemoteCommandRouter(
+            service: host.screenControl,
+            dockGroups: host.dockGroupsHosting,
+            log: host.remoteLog
+        )
         self.remoteAddress = transport.remoteHost
         self.idleTimeoutOverride = idleTimeout
         self.idleCheckInterval = idleCheckInterval ?? Self.defaultIdleCheckInterval
@@ -289,7 +313,7 @@ final class RemoteConnection: Identifiable {
             deviceName: host.deviceStore.deviceName,
             paired: paired,
             serverNonce: serverNonce,
-            capabilities: [.lock, .displayOff, .wake, .unlock, .realtimeInput, .inputPressure, .inputPressureStream]
+            capabilities: host.advertisedCapabilities
         )
         if !paired {
             let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: serverNonce)

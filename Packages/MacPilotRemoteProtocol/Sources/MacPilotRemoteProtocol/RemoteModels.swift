@@ -180,19 +180,122 @@ public struct RemoteResponse: Codable, Sendable, Equatable {
     public let success: Bool
     public let error: RemoteError?
     public let state: MacRemoteState?
+    /// Command specific answer, e.g. a `RemoteDockGroupsSnapshot` for the Dock
+    /// group commands. Optional in both directions: older peers that neither
+    /// send nor expect a payload keep decoding this response unchanged.
+    public let payload: Data?
 
     public init(
         version: Int = RemoteProtocolVersion.current,
         requestID: UUID,
         success: Bool,
         error: RemoteError? = nil,
-        state: MacRemoteState? = nil
+        state: MacRemoteState? = nil,
+        payload: Data? = nil
     ) {
         self.version = version
         self.requestID = requestID
         self.success = success
         self.error = error
         self.state = state
+        self.payload = payload
+    }
+}
+
+// MARK: - Dock groups
+
+/// How a Dock group's icon is drawn. Mirrors the Mac's `DockGroupIconSource`
+/// so the phone can pick a close rendering: SF Symbols map 1:1, an emoji is
+/// text, and the two image-backed sources fall back to a placeholder.
+public enum RemoteDockGroupIconSource: String, Codable, Sendable, Equatable, CaseIterable {
+    case symbol
+    case emoji
+    case composite
+    case customImage
+}
+
+/// One member app of a Dock group, as the phone renders it. Running state is
+/// computed when the snapshot is built, so it is a moment-in-time view.
+public struct RemoteDockGroupAppSummary: Codable, Sendable, Equatable, Identifiable {
+    public let id: UUID
+    public let name: String
+    public let isRunning: Bool
+
+    public init(id: UUID, name: String, isRunning: Bool) {
+        self.id = id
+        self.name = name
+        self.isRunning = isRunning
+    }
+}
+
+/// One Dock group on the Mac.
+public struct RemoteDockGroupSummary: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let name: String
+    public let iconSource: RemoteDockGroupIconSource
+    /// SF Symbol name, emoji text, or an opaque file name for image-backed
+    /// sources — the phone never fetches that image and renders a placeholder.
+    public let iconValue: String
+    public let apps: [RemoteDockGroupAppSummary]
+
+    public init(
+        id: String,
+        name: String,
+        iconSource: RemoteDockGroupIconSource,
+        iconValue: String,
+        apps: [RemoteDockGroupAppSummary]
+    ) {
+        self.id = id
+        self.name = name
+        self.iconSource = iconSource
+        self.iconValue = iconValue
+        self.apps = apps
+    }
+}
+
+/// The full Dock group listing. Rides in the payload of `getDockGroups`, and
+/// in the reply of both launch commands so the phone can refresh its rows from
+/// the same round trip.
+public struct RemoteDockGroupsSnapshot: Codable, Sendable, Equatable {
+    public let groups: [RemoteDockGroupSummary]
+    /// `launchDockGroup` / `launchDockGroupApp` only: names of members the Mac
+    /// could not resolve or launch (deleted, moved, broken). `nil` on
+    /// `getDockGroups`. A launch that cannot find the group at all is an
+    /// error response, not an empty list here.
+    public let missingApps: [String]?
+
+    public init(groups: [RemoteDockGroupSummary], missingApps: [String]? = nil) {
+        self.groups = groups
+        self.missingApps = missingApps
+    }
+
+    public func encoded() throws -> Data { try JSONEncoder().encode(self) }
+
+    /// `nil` for a missing or undecodable payload.
+    public static func decoded(from payload: Data?) -> RemoteDockGroupsSnapshot? {
+        guard let payload, !payload.isEmpty else { return nil }
+        return try? JSONDecoder().decode(RemoteDockGroupsSnapshot.self, from: payload)
+    }
+}
+
+/// Payload for `launchDockGroup` and `launchDockGroupApp`. A `nil` `appID`
+/// launches every member of the group.
+public struct RemoteDockGroupLaunchRequest: Codable, Sendable, Equatable {
+    public let groupID: String
+    public let appID: UUID?
+
+    public init(groupID: String, appID: UUID? = nil) {
+        self.groupID = groupID
+        self.appID = appID
+    }
+
+    public func encoded() throws -> Data { try JSONEncoder().encode(self) }
+
+    /// `nil` for a missing or undecodable payload, which the server reports as
+    /// `invalidMessage` instead of guessing what to launch.
+    public static func decoded(from payload: Data?) -> RemoteDockGroupLaunchRequest? {
+        guard let payload, !payload.isEmpty else { return nil }
+        return try? JSONDecoder().decode(RemoteDockGroupLaunchRequest.self, from: payload)
     }
 }
 

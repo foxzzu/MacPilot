@@ -83,6 +83,16 @@ final class RemoteAppModel: ObservableObject {
     @Published private(set) var errorKey: String?
     @Published private(set) var infoKey: String?
     @Published private(set) var runningCommand: RemoteCommand?
+    /// The Mac's Dock groups, when it advertises the capability. `nil` until
+    /// the first fetch answers, and cleared whenever the connection resets.
+    @Published private(set) var dockGroupsSnapshot: RemoteDockGroupsSnapshot?
+    /// The group (or single member) a launch is currently in flight for, so
+    /// rows show progress instead of looking dead.
+    @Published private(set) var launchingDockGroupID: String?
+    @Published private(set) var launchingDockAppID: UUID?
+    /// Members the Mac could not launch in the last group launch, listed in
+    /// the info banner.
+    @Published private(set) var dockGroupsMissingApps: [String] = []
     @Published var pairingPrompt: PairingPrompt?
     @Published private(set) var metrics = RemoteMetrics()
     /// Which link carries the session and through which interface, e.g.
@@ -775,6 +785,7 @@ final class RemoteAppModel: ObservableObject {
         )
         if wasPairing { store.preferredMacID = deviceID.uuidString }
         activeMac = store.mac(id: deviceID)
+        refreshDockGroups()
     }
 
     private func handleDisconnected() {
@@ -828,6 +839,10 @@ final class RemoteAppModel: ObservableObject {
         errorKey = nil
         infoKey = nil
         runningCommand = nil
+        dockGroupsSnapshot = nil
+        dockGroupsMissingApps = []
+        launchingDockGroupID = nil
+        launchingDockAppID = nil
         pendingLevel = nil
         isSendingLevel = false
         isRefreshingState = false
@@ -940,6 +955,10 @@ final class RemoteAppModel: ObservableObject {
     /// Whether the connected Mac understands the continuous press stream.
     var supportsInputPressureStream: Bool { connection.supportsInputPressureStream }
 
+    /// Whether the connected Mac serves Dock groups. Decides whether the home
+    /// screen offers the section at all.
+    var supportsDockGroups: Bool { connection.supportsDockGroups }
+
     /// Quality of the link currently carrying the session, from the trackpad's
     /// point of view. AWDL rides the same network transport — the race that
     /// picks the session already prefers the fastest path, and AWDL is
@@ -1015,6 +1034,105 @@ final class RemoteAppModel: ObservableObject {
 
     func beginCommand(_ command: RemoteCommand) {
         Haptics.impact()
+    }
+
+    // MARK: - Dock groups
+
+    private var isRefreshingDockGroups = false
+
+    /// Fetches the Mac's Dock groups. Runs after connecting and after every
+    /// launch, so the rows reflect what the Mac itself sees.
+    func refreshDockGroups() {
+        guard connectionState.isConnected, connection.supportsDockGroups, !isRefreshingDockGroups else { return }
+        isRefreshingDockGroups = true
+        let manager = connection
+        Task { [weak self] in
+            guard let self else { return }
+            defer { if self.isCurrent(manager) { self.isRefreshingDockGroups = false } }
+            guard let response = try? await manager.send(.getDockGroups), self.isCurrent(manager) else { return }
+            self.dockGroupsSnapshot = RemoteDockGroupsSnapshot.decoded(from: response.payload)
+        }
+    }
+
+    /// Launches every member of one group. The reply carries the refreshed
+    /// snapshot; a short follow-up fetch catches members whose process took a
+    /// moment to register as running.
+    func launchDockGroup(id: String) {
+        guard launchingDockGroupID == nil, launchingDockAppID == nil else { return }
+        launchingDockGroupID = id
+        Haptics.impact()
+        sendDockGroupLaunch(RemoteDockGroupLaunchRequest(groupID: id)) { [weak self] in
+            self?.launchingDockGroupID = nil
+        }
+    }
+
+    /// Launches or activates a single member of a group.
+    func launchDockGroupApp(groupID: String, appID: UUID) {
+        guard launchingDockGroupID == nil, launchingDockAppID == nil else { return }
+        launchingDockAppID = appID
+        Haptics.impact()
+        sendDockGroupLaunch(RemoteDockGroupLaunchRequest(groupID: groupID, appID: appID)) { [weak self] in
+            self?.launchingDockAppID = nil
+        }
+    }
+
+    private func sendDockGroupLaunch(
+        _ request: RemoteDockGroupLaunchRequest,
+        onSettled: @escaping () -> Void
+    ) {
+        guard connectionState.isConnected, connection.supportsDockGroups else {
+            errorKey = "errorNotPaired"
+            onSettled()
+            return
+        }
+        let manager = connection
+        Task { [weak self] in
+            guard let self else { return }
+            defer { onSettled() }
+            let payload = try? request.encoded()
+            let response: RemoteResponse
+            do {
+                // Launching a whole group opens the members one by one; a big
+                // group on a cold Mac can outlast the default 10 s window.
+                response = try await manager.send(
+                    request.appID == nil ? .launchDockGroup : .launchDockGroupApp,
+                    payload: payload,
+                    timeout: 30
+                )
+            } catch {
+                guard self.isCurrent(manager) else { return }
+                self.reportDockGroupFailure(error)
+                return
+            }
+            guard self.isCurrent(manager) else { return }
+            if let state = response.state { self.macState = state }
+            if response.success {
+                if let snapshot = RemoteDockGroupsSnapshot.decoded(from: response.payload) {
+                    self.dockGroupsSnapshot = snapshot
+                }
+                let missing = RemoteDockGroupsSnapshot.decoded(from: response.payload)?.missingApps ?? []
+                self.dockGroupsMissingApps = missing
+                self.infoKey = missing.isEmpty ? "dockGroupLaunchDone" : "dockGroupLaunchMissing"
+                Haptics.success()
+                // Running state lags the launch: the process has to come up
+                // before the Mac's snapshot shows it.
+                try? await Task.sleep(for: .seconds(2))
+                guard self.isCurrent(manager) else { return }
+                self.refreshDockGroups()
+            } else if let code = response.error?.code {
+                self.errorKey = code.messageKey
+                Haptics.warning()
+            }
+        }
+    }
+
+    private func reportDockGroupFailure(_ error: Error) {
+        if let remoteError = error as? RemoteConnectionError {
+            errorKey = remoteError.messageKey
+        } else {
+            errorKey = "errorNetwork"
+        }
+        Haptics.warning()
     }
 
     // MARK: - Output levels

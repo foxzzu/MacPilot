@@ -217,6 +217,30 @@ behavior is byte-for-byte the trackpad of previous releases. iPads have no
 Taptic engine, so press feedback plays a synthesized trackpad click instead
 of buzzing.
 
+## Dock groups (launch a work set from the phone)
+
+Three authenticated commands let the phone open a Dock group's apps on the
+Mac without touching it:
+
+```
+getDockGroups        no payload → RemoteDockGroupsSnapshot payload
+launchDockGroup      RemoteDockGroupLaunchRequest{groupID} → snapshot payload
+launchDockGroupApp   RemoteDockGroupLaunchRequest{groupID, appID} → snapshot payload
+```
+
+- **Capability gated.** The Mac advertises `dockGroups` in the Bonjour TXT
+  record and in `serverHello` only when the feature is wired in, and the
+  router answers `unsupportedCommand` when the feature is switched off —
+  either way the phone hides the section instead of sending a command an
+  older Mac cannot decode.
+- **One launch path.** The router calls `DockGroupsRemoteHost`, which wraps
+  `DockGroupsModel` and launches through the same `AppLaunchService` the Dock
+  helper uses (running members are activated, never duplicated). The phone
+  can therefore do nothing the Mac's own UI could not.
+- **Snapshot answers.** Launch replies carry the refreshed group list, so one
+  round trip updates the rows; members that could not be resolved or launched
+  ride along as `missingApps` names instead of failing the whole command.
+
 ## Handshake
 
 ### Already paired

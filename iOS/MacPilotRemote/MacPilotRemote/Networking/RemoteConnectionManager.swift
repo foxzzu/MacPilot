@@ -87,6 +87,10 @@ final class RemoteConnectionManager {
     /// The Mac understands the continuous press stream, so the button can
     /// actuate while the finger is still down.
     var supportsInputPressureStream: Bool { serverCapabilities.contains(.inputPressureStream) }
+    /// The Mac answers the Dock group commands. Without the advertisement the
+    /// phone hides the section entirely — an unknown command rawValue would
+    /// break an older Mac's decode of the request.
+    var supportsDockGroups: Bool { serverCapabilities.contains(.dockGroups) }
     /// True once the link is up, even if the handshake is still running. The
     /// race uses it to tell "still dialling" from "mid handshake", which decides
     /// whether an attempt may still be cut short.

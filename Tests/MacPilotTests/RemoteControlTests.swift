@@ -199,6 +199,152 @@ struct RemoteCommandRouterTests {
     }
 }
 
+/// The Dock group commands route through a stubbed `RemoteDockGroupsHosting`,
+/// so these tests never launch a real application.
+@Suite("Remote dock group commands")
+@MainActor
+struct RemoteDockGroupsRouterTests {
+    private final class StubDockGroupsHost: RemoteDockGroupsHosting {
+        var snapshot: RemoteDockGroupsSnapshot?
+        var launchOutcome: RemoteDockGroupLaunchOutcome
+        private(set) var launches: [(groupID: String, appID: UUID?)] = []
+
+        init(snapshot: RemoteDockGroupsSnapshot?, launchOutcome: RemoteDockGroupLaunchOutcome) {
+            self.snapshot = snapshot
+            self.launchOutcome = launchOutcome
+        }
+
+        func remoteSnapshot() async -> RemoteDockGroupsSnapshot? { snapshot }
+
+        func remoteLaunch(groupID: String, appID: UUID?) async -> RemoteDockGroupLaunchOutcome {
+            launches.append((groupID, appID))
+            return launchOutcome
+        }
+    }
+
+    private func makeRouter(dockGroups: StubDockGroupsHost?) -> RemoteCommandRouter {
+        RemoteCommandRouter(
+            service: MacScreenControlService(
+                credentials: ScreenCredentialStore(secretStore: InMemorySecretStore(), log: { _ in }),
+                log: { _ in }
+            ),
+            dockGroups: dockGroups,
+            log: { _ in }
+        )
+    }
+
+    private static func sampleSnapshot(missingApps: [String]? = nil) -> RemoteDockGroupsSnapshot {
+        RemoteDockGroupsSnapshot(
+            groups: [
+                RemoteDockGroupSummary(
+                    id: "work",
+                    name: "Work",
+                    iconSource: .symbol,
+                    iconValue: "hammer",
+                    apps: [
+                        RemoteDockGroupAppSummary(id: UUID(), name: "Editor", isRunning: true),
+                        RemoteDockGroupAppSummary(id: UUID(), name: "Browser", isRunning: false),
+                    ]
+                )
+            ],
+            missingApps: missingApps
+        )
+    }
+
+    @Test("getDockGroups answers with a decodable snapshot")
+    func getDockGroupsReturnsSnapshot() async throws {
+        let host = StubDockGroupsHost(snapshot: Self.sampleSnapshot(), launchOutcome: .groupNotFound)
+        let response = await makeRouter(dockGroups: host)
+            .response(for: RemoteRequest(command: .getDockGroups, sequence: 1), isAuthenticated: true)
+        #expect(response.success)
+        let snapshot = try #require(RemoteDockGroupsSnapshot.decoded(from: response.payload))
+        #expect(snapshot.groups.first?.name == "Work")
+        #expect(snapshot.groups.first?.apps.count == 2)
+        #expect(snapshot.groups.first?.apps.first?.isRunning == true)
+        #expect(snapshot.missingApps == nil)
+    }
+
+    @Test("dock group commands refuse to run without authentication")
+    func dockGroupCommandsRequireAuthentication() async {
+        for command in [RemoteCommand.getDockGroups, .launchDockGroup, .launchDockGroupApp] {
+            let request = RemoteRequest(command: command, sequence: 1)
+            let response = await makeRouter(dockGroups: nil).response(for: request, isAuthenticated: false)
+            #expect(!response.success, "\(command) must not run unauthenticated")
+            #expect(response.error?.code == .unauthenticated)
+        }
+    }
+
+    @Test("dock group commands without a host answer unsupportedCommand")
+    func dockGroupCommandsWithoutHostUnsupported() async {
+        for command in [RemoteCommand.getDockGroups, .launchDockGroup, .launchDockGroupApp] {
+            let request = RemoteRequest(command: command, sequence: 1)
+            let response = await makeRouter(dockGroups: nil).response(for: request, isAuthenticated: true)
+            #expect(!response.success)
+            #expect(response.error?.code == .unsupportedCommand)
+        }
+    }
+
+    @Test("a launch without a payload is refused instead of guessed")
+    func launchRequiresPayload() async {
+        let host = StubDockGroupsHost(
+            snapshot: nil,
+            launchOutcome: .snapshot(Self.sampleSnapshot())
+        )
+        for command in [RemoteCommand.launchDockGroup, .launchDockGroupApp] {
+            let response = await makeRouter(dockGroups: host)
+                .response(for: RemoteRequest(command: command, sequence: 1), isAuthenticated: true)
+            #expect(!response.success, "\(command) must not launch without a payload")
+            #expect(response.error?.code == .invalidMessage)
+        }
+        #expect(host.launches.isEmpty)
+    }
+
+    @Test("an unknown group is an error, not an empty launch")
+    func unknownGroupRefused() async throws {
+        let host = StubDockGroupsHost(snapshot: nil, launchOutcome: .groupNotFound)
+        let payload = try RemoteDockGroupLaunchRequest(groupID: "missing").encoded()
+        let response = await makeRouter(dockGroups: host).response(
+            for: RemoteRequest(command: .launchDockGroup, sequence: 1, payload: payload),
+            isAuthenticated: true
+        )
+        #expect(!response.success)
+        #expect(response.error?.code == .invalidMessage)
+        #expect(host.launches.count == 1)
+        #expect(host.launches.first?.groupID == "missing")
+        #expect(host.launches.first?.appID == nil)
+    }
+
+    @Test("launching a group replies with the refreshed snapshot and missing names")
+    func launchRepliesWithSnapshot() async throws {
+        let host = StubDockGroupsHost(
+            snapshot: nil,
+            launchOutcome: .snapshot(Self.sampleSnapshot(missingApps: ["Editor"]))
+        )
+        let payload = try RemoteDockGroupLaunchRequest(groupID: "work").encoded()
+        let response = await makeRouter(dockGroups: host).response(
+            for: RemoteRequest(command: .launchDockGroup, sequence: 1, payload: payload),
+            isAuthenticated: true
+        )
+        #expect(response.success)
+        let snapshot = try #require(RemoteDockGroupsSnapshot.decoded(from: response.payload))
+        #expect(snapshot.missingApps == ["Editor"])
+        #expect(host.launches.first?.appID == nil)
+    }
+
+    @Test("launching one member forwards the app id")
+    func launchAppForwardsAppID() async throws {
+        let appID = UUID()
+        let host = StubDockGroupsHost(snapshot: nil, launchOutcome: .snapshot(Self.sampleSnapshot()))
+        let payload = try RemoteDockGroupLaunchRequest(groupID: "work", appID: appID).encoded()
+        let response = await makeRouter(dockGroups: host).response(
+            for: RemoteRequest(command: .launchDockGroupApp, sequence: 1, payload: payload),
+            isAuthenticated: true
+        )
+        #expect(response.success)
+        #expect(host.launches.first?.appID == appID)
+    }
+}
+
 // MARK: - Level payload
 
 @Suite("Remote level payload")

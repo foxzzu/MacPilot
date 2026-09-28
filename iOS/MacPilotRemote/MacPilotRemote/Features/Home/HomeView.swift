@@ -1,6 +1,10 @@
 import MacPilotRemoteProtocol
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// The four remote actions. No confirmation dialogs: an authenticated, encrypted
 /// connection is already in place.
 struct HomeView: View {
@@ -22,6 +26,12 @@ struct HomeView: View {
                 VStack(spacing: 18) {
                     deviceCard
                     actionGrid
+                    // Hidden entirely on a Mac that predates the capability:
+                    // the trackpad explains itself on tap, but a whole dead
+                    // section would just be noise.
+                    if !appModel.connectionState.isConnected || appModel.supportsDockGroups {
+                        dockGroupsPanel
+                    }
                     levelsPanel
                     messageBanner
                     if !appModel.connectionState.isConnected {
@@ -282,6 +292,12 @@ struct HomeView: View {
         .accessibilityLabel(appModel.text(titleKey))
     }
 
+    // MARK: - Dock groups
+
+    private var dockGroupsPanel: some View {
+        DockGroupsPanel()
+    }
+
     // MARK: - Output levels
 
     /// Brightness and volume, read from the same `MacRemoteState` the rest of
@@ -334,8 +350,17 @@ struct HomeView: View {
         if let errorKey = appModel.errorKey {
             banner(text: appModel.text(errorKey), systemImage: "exclamationmark.triangle.fill", tint: .orange)
         } else if let infoKey = appModel.infoKey {
-            banner(text: appModel.text(infoKey), systemImage: "checkmark.circle.fill", tint: .green)
+            banner(text: infoText(infoKey), systemImage: "checkmark.circle.fill", tint: .green)
         }
+    }
+
+    /// The missing-apps info carries the failed names with it, so it reads like
+    /// a sentence instead of a bare "done".
+    private func infoText(_ key: String) -> String {
+        if key == "dockGroupLaunchMissing", !appModel.dockGroupsMissingApps.isEmpty {
+            return appModel.text(key, appModel.dockGroupsMissingApps.joined(separator: "、"))
+        }
+        return appModel.text(key)
     }
 
     private func banner(text: String, systemImage: String, tint: Color) -> some View {
@@ -508,5 +533,218 @@ private struct LevelSliderRow: View {
     private func send(_ newValue: Double) {
         let muted: Bool? = kind == .volume && newValue > 0 ? false : nil
         appModel.setLevel(kind, value: newValue, muted: muted)
+    }
+}
+
+/// The Mac's Dock groups, launchable from the couch: tapping a group opens
+/// every member on the Mac, expanding it offers per-app launches.
+///
+/// Same honesty rules as the levels panel: the section only appears when the
+/// Mac advertised the capability, and the rows only ever show what the Mac's
+/// own snapshot reported — the phone never guesses running state.
+private struct DockGroupsPanel: View {
+    @EnvironmentObject private var appModel: RemoteAppModel
+
+    @State private var expandedGroupID: String?
+
+    private var isConnected: Bool { appModel.connectionState.isConnected }
+    private var isBusy: Bool { appModel.launchingDockGroupID != nil || appModel.launchingDockAppID != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(appModel.text("dockGroupsTitle"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                if isConnected {
+                    Button {
+                        appModel.refreshDockGroups()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(appModel.text("dockGroupRefresh"))
+                }
+            }
+
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !isConnected {
+            hint(appModel.text("dockGroupsNotConnected"))
+        } else if let groups = appModel.dockGroupsSnapshot?.groups {
+            if groups.isEmpty {
+                hint(appModel.text("dockGroupsEmpty"))
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(groups) { group in
+                        groupRow(group)
+                    }
+                }
+            }
+        } else {
+            // The first fetch is still in the air, or it failed; the header
+            // refresh button is the retry path either way.
+            hint(appModel.text("dockGroupsUnavailable"))
+        }
+    }
+
+    private func groupRow(_ group: RemoteDockGroupSummary) -> some View {
+        let runningCount = group.apps.filter(\.isRunning).count
+        let isExpanded = expandedGroupID == group.id
+        let canExpand = !group.apps.isEmpty
+        return VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                groupIcon(group)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(appModel.text("dockGroupAppsRunning", group.apps.count, runningCount))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Spacer(minLength: 8)
+                launchGroupButton(group)
+                if canExpand {
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard canExpand else { return }
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    expandedGroupID = isExpanded ? nil : group.id
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(appModel.text(canExpand ? "dockGroupExpandHint" : "dockGroupEmptyHint"))
+
+            if isExpanded {
+                VStack(spacing: 0) {
+                    ForEach(group.apps) { app in
+                        appRow(group, app)
+                    }
+                }
+                .padding(.bottom, 6)
+                .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.tertiarySystemGroupedBackground))
+        )
+    }
+
+    private func launchGroupButton(_ group: RemoteDockGroupSummary) -> some View {
+        Button {
+            appModel.launchDockGroup(id: group.id)
+        } label: {
+            ZStack {
+                if appModel.launchingDockGroupID == group.id {
+                    ProgressView()
+                } else {
+                    Image(systemName: "play.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(group.apps.isEmpty ? Color.secondary : Color.accentColor)
+                }
+            }
+            .frame(width: 30, height: 30)
+        }
+        .buttonStyle(.plain)
+        .disabled(group.apps.isEmpty || isBusy)
+        .accessibilityLabel(appModel.text("dockGroupLaunch", group.name))
+    }
+
+    private func appRow(_ group: RemoteDockGroupSummary, _ app: RemoteDockGroupAppSummary) -> some View {
+        Button {
+            appModel.launchDockGroupApp(groupID: group.id, appID: app.id)
+        } label: {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(app.isRunning ? Color.green : Color.secondary.opacity(0.35))
+                    .frame(width: 7, height: 7)
+                Text(app.name)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                ZStack {
+                    if appModel.launchingDockAppID == app.id {
+                        ProgressView()
+                    } else {
+                        Image(systemName: app.isRunning ? "arrow.uturn.forward.circle" : "arrow.up.circle")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 24, height: 24)
+            }
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+        .accessibilityLabel(appModel.text("dockGroupLaunchApp", app.name))
+    }
+
+    @ViewBuilder
+    private func groupIcon(_ group: RemoteDockGroupSummary) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.accentColor.opacity(0.14))
+            switch group.iconSource {
+            case .symbol where Self.symbolExists(group.iconValue):
+                Image(systemName: group.iconValue)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            case .emoji:
+                Text(group.iconValue)
+                    .font(.system(size: 16))
+            default:
+                // Composite and custom images live on the Mac; the placeholder
+                // says "a group of apps" without pretending to be the real icon.
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .frame(width: 36, height: 36)
+    }
+
+    /// The Mac's symbol catalog can be newer than the phone's; an unknown
+    /// name falls back to the placeholder instead of rendering blank.
+    private static func symbolExists(_ name: String) -> Bool {
+        #if canImport(UIKit)
+        UIImage(systemName: name) != nil
+        #else
+        false
+        #endif
+    }
+
+    private func hint(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

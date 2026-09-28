@@ -28,6 +28,16 @@ public enum RemoteCommand: String, Codable, Sendable, CaseIterable, Equatable {
     case beginTextInput
     case textInput
     case endTextInput
+    /// Lists the Mac's Dock groups with per-app running state. Replies with a
+    /// `RemoteDockGroupsSnapshot` payload.
+    case getDockGroups
+    /// Launches every member of one Dock group (running members are activated).
+    /// Carries a `RemoteDockGroupLaunchRequest` payload and replies with the
+    /// refreshed `RemoteDockGroupsSnapshot`.
+    case launchDockGroup
+    /// Launches or activates a single member of one Dock group. Carries a
+    /// `RemoteDockGroupLaunchRequest` payload with `appID` set.
+    case launchDockGroupApp
 
     /// Commands that change the machine and therefore always require an
     /// authenticated, encrypted session.
@@ -37,7 +47,8 @@ public enum RemoteCommand: String, Codable, Sendable, CaseIterable, Equatable {
             return false
         case .lockScreen, .displayOff, .wakeDisplay, .unlock, .wakeAndUnlock,
              .setBrightness, .setVolume, .beginRealtimeInput, .endRealtimeInput,
-             .beginTextInput, .textInput, .endTextInput:
+             .beginTextInput, .textInput, .endTextInput,
+             .getDockGroups, .launchDockGroup, .launchDockGroupApp:
             return true
         }
     }
@@ -60,4 +71,9 @@ public enum RemoteCapability: String, Codable, Sendable, CaseIterable, Equatable
     /// finger is still down and grade it as the contact deepens. Macs that
     /// only advertise `.inputPressure` get the one-shot kind-4 press instead.
     case inputPressureStream
+    /// The Mac answers the Dock group commands and launching a group or one of
+    /// its members from the phone is safe to attempt. Macs without this
+    /// advertisement would drop the connection on an unknown command rawValue,
+    /// so the phone hides the whole section instead of sending it.
+    case dockGroups
 }

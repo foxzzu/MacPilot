@@ -2005,7 +2005,8 @@ final class MacPilotModel: ObservableObject {
     lazy var remoteDeviceStore = RemoteDeviceStore(persist: { [weak self] in self?.saveIfReady() })
     lazy var remoteControl = RemoteControlServer(
         deviceStore: remoteDeviceStore,
-        screenControl: ble.screenControl
+        screenControl: ble.screenControl,
+        dockGroups: DockGroupsRemoteHost(model: dockGroups)
     )
     /// Dock Groups：分组配置 + 每个分组的 Helper App。
     let dockGroups = DockGroupsModel()

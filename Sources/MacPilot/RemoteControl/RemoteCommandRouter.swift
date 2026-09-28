@@ -9,14 +9,20 @@ import MacPilotRemoteProtocol
 @MainActor
 struct RemoteCommandRouter {
     let service: MacScreenControlService
+    /// Dock groups on this Mac. `nil` leaves the three Dock group commands
+    /// answering `unsupportedCommand`, which is how a host without the feature
+    /// (and every test that does not care) keeps compiling.
+    private let dockGroups: (any RemoteDockGroupsHosting)?
 
     private let logHandler: (String) -> Void
 
     init(
         service: MacScreenControlService,
+        dockGroups: (any RemoteDockGroupsHosting)? = nil,
         log: @escaping (String) -> Void = { remoteControlLog($0) }
     ) {
         self.service = service
+        self.dockGroups = dockGroups
         self.logHandler = log
     }
 
@@ -59,12 +65,58 @@ struct RemoteCommandRouter {
         case .setBrightness, .setVolume:
             return respondToLevel(request, started: started)
 
+        case .getDockGroups:
+            return await respondToDockGroups(request, started: started)
+
+        case .launchDockGroup, .launchDockGroupApp:
+            return await respondToDockGroupLaunch(request, started: started)
+
         case .beginRealtimeInput, .endRealtimeInput,
              .beginTextInput, .textInput, .endTextInput:
             // Intercepted by `RemoteConnection` before the router: they arm
             // per-connection session state, which the router never sees.
             return failure(for: request, code: .unsupportedCommand)
         }
+    }
+
+    /// A Dock group listing. `nil` from the host means the feature is switched
+    /// off, which the phone treats the same as an old Mac: no section.
+    private func respondToDockGroups(_ request: RemoteRequest, started: Date) async -> RemoteResponse {
+        guard let dockGroups, let snapshot = await dockGroups.remoteSnapshot() else {
+            return failure(for: request, code: .unsupportedCommand)
+        }
+        return payloadResponse(request, started: started, payload: try? snapshot.encoded())
+    }
+
+    private func respondToDockGroupLaunch(_ request: RemoteRequest, started: Date) async -> RemoteResponse {
+        guard let dockGroups else {
+            return failure(for: request, code: .unsupportedCommand)
+        }
+        guard let launch = RemoteDockGroupLaunchRequest.decoded(from: request.payload) else {
+            log("command refused reason=missingDockGroup command=\(request.command.rawValue)")
+            return failure(for: request, code: .invalidMessage)
+        }
+        guard case let .snapshot(snapshot) = await dockGroups.remoteLaunch(
+            groupID: launch.groupID,
+            appID: launch.appID
+        ) else {
+            log("command refused reason=dockGroupNotFound command=\(request.command.rawValue)")
+            return failure(for: request, code: .invalidMessage)
+        }
+        return payloadResponse(request, started: started, payload: try? snapshot.encoded())
+    }
+
+    /// The Dock group commands answer with the group snapshot instead of state
+    /// changes; `state` still rides along so the panel stays fresh for free.
+    private func payloadResponse(_ request: RemoteRequest, started: Date, payload: Data?) -> RemoteResponse {
+        let latency = Int(Date().timeIntervalSince(started) * 1000)
+        log("command completed command=\(request.command.rawValue) latency=\(latency)ms")
+        return RemoteResponse(
+            requestID: request.requestID,
+            success: true,
+            state: service.currentState(),
+            payload: payload
+        )
     }
 
     /// Brightness and volume share one shape: decode the payload, clamp it, apply
