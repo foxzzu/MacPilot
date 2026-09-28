@@ -1,16 +1,28 @@
 # Repository Guidelines
 
-Contributor guide for **MacPilot**, a native macOS menu-bar app (Swift 6, SwiftPM, macOS 14+) that auto-manages distracting apps and adds BLE proximity lock/unlock.
+Contributor guide for **MacPilot**, a native macOS menu-bar app (Swift 6, SwiftPM, macOS 14+) with 18 independently switchable feature modules: app inactivity rules, scheduled launch, Awake keep-awake, BLE proximity lock/unlock, iPhone remote control, capture/screenshot tooling, dock groups, local ports, and more.
 
 ## Project Structure & Module Organization
 
-- `Sources/MacPilot/` — main executable target: `MacPilotApp.swift` (core), `BLEUnlock.swift` (proximity lock/unlock), and `SoftwareUpdate.swift` (release checks, validation, and update orchestration).
-- `Sources/MacPilotUpdater/` — small helper executable that atomically replaces the verified app bundle and relaunches it after the main process exits.
-- `Tests/MacPilotTests/` — Swift Testing suites (`LaunchRuleCodingTests.swift`, `BLEUnlockPerformanceTests.swift`, `SoftwareUpdateTests.swift`).
+- `Sources/MacPilot/` — main executable target, one subdirectory per feature cluster (`Awake/`, `BLE/`, `DockGroups/`, `RemoteControl/`, `SnapzyCapture/`, `SmoothScrolling/`, …) plus `MacPilotApp.swift` (core), `BLEUnlock.swift` (proximity lock/unlock), and `SoftwareUpdate.swift` (release checks, validation, and update orchestration).
+- `Packages/MacPilotRemoteProtocol/` — local SwiftPM package with the wire protocol + transport shared by the macOS app and the iOS remote app.
+- `iOS/MacPilotRemote/` — companion iPhone app (Xcode project generated from `project.yml`; build scripts inside).
+- `website/` — Chinese product site (Vinext/React, deployed to Cloudflare); Node ≥ 22.13, its own `package.json` and lint setup.
+- `Sources/MacPilotUpdater/` + `MacPilotUpdaterSupport/` — helper executable that atomically replaces the verified app bundle and relaunches it after the main process exits.
+- Other packaged targets: `MacPilotDockGroupsCore` + `MacPilotDockHelper`, `MacPilotLocalPortsCore`, `MacPilotPowerIPC` + `MacPilotPowerHelper`, `MacPilotRightClickKit` + `MacPilotFinderSync`, `MacPilotOcclusionPatch` (dynamic library). See Architecture boundaries below.
+- `Tests/` — Swift Testing targets: `MacPilotTests` (main suites, e.g. `LaunchRuleCodingTests.swift`, `BLEUnlockPerformanceTests.swift`, `SoftwareUpdateTests.swift`), plus `MacPilotFinderSyncTests`, `MacPilotLocalPortsCoreTests`, `MacPilotRightClickKitTests`, `MacPilotUpdaterSupportTests`. `Tests/Performance/` holds resource-acceptance benchmarks (`resource-benchmark.sh`, thresholds in its README).
 - `Resources/` — `Info.plist`, `MacPilot.entitlements`, `AppIcon.icns`, icon sources.
-- `Scripts/` — `build-app.sh`, `distribute-app.sh`, `version.sh`.
+- `Scripts/` — `build-app.sh`, `build-findersync.sh`, `distribute-app.sh`, `version.sh`, `signing-requirement.sh` / `verify-signing-requirement.sh`, `measure-memory.sh`, `capture-permission-diagnostics.sh`, `verify-awdl.sh`.
+- `docs/` — `UI_DESIGN.md` (normative UI tokens), `REMOTE_CONTROL.md` (iPhone→Mac design, wire protocol, security model), `AWAKE_MANUAL_TESTS.md` (manual power-state acceptance), `PERMISSION_DIAGNOSTICS.md`, `UPDATE_DOWNLOADS.md`, `MEMORY_REVIEW.md`.
 - `.github/workflows/build.yml` — CI.
 - Runtime config lives outside the bundle at `~/Library/Application Support/MacPilot/config.json`; bundle ID `com.misswell.macpilot`.
+
+## Architecture boundaries
+
+- `MacPilotLocalPortsCore` stays plain Foundation/Darwin on purpose — no SwiftUI or app-model dependency, so a future CLI can reuse the same identity boundary.
+- `MacPilotPowerIPC` contains only types and pure logic, never privileged operations; `MacPilotPowerHelper` is the root LaunchDaemon that provides the `pmset disablesleep` capability.
+- Dock Groups share one model via `MacPilotDockGroupsCore`: the main app writes config, the helper reads it, tests verify integrity. Every group's helper app reuses a single binary, differentiated only by bundle ID, icon, and name — never touch third-party apps outside that shared model.
+- `MacPilotFinderSync` uses the `_NSExtensionMain` entry point (built via `Scripts/build-findersync.sh`); SwiftUI is linked explicitly so SwiftUICore reaches the linker through SwiftUI's re-export instead of an autolink entry.
 
 ## Build, Test, and Development Commands
 
@@ -19,6 +31,7 @@ Contributor guide for **MacPilot**, a native macOS menu-bar app (Swift 6, SwiftP
 - `./Scripts/version.sh` — print current version (latest `v*` tag + commits since).
 - `./Scripts/build-app.sh` — release build, package `MacPilot.app`, inject version into `Info.plist`, codesign (Developer ID if `MACPILOT_DEVELOPER_ID` is set, otherwise ad-hoc; the old `OCTOPILOT_DEVELOPER_ID` alias remains accepted).
 - `./Scripts/distribute-app.sh` — sign with Hardened Runtime, notarize, staple, output `MacPilot-<version>-macos.zip` (needs Apple Developer credentials).
+- `website/` (run inside that directory): `npm ci`, `npm run dev`, `npm run build`, `npm run lint` (oxlint).
 
 ## Coding Style & Naming Conventions
 
@@ -37,6 +50,7 @@ Contributor guide for **MacPilot**, a native macOS menu-bar app (Swift 6, SwiftP
 - Framework: **Swift Testing** (`import Testing`; `@Test`, `#expect`, `#require`). Suites are `struct`s of `@testable import MacPilot` functions.
 - Name tests as sentences describing the invariant. Use `UserDefaults(suiteName:)` with a UUID for stateful tests and clean up via `defer`.
 - Run `swift test` before pushing.
+- Power/display-state behavior (Awake, closed-lid sleep) can't be fully automated: follow the scenarios in `docs/AWAKE_MANUAL_TESTS.md` when changing it. Memory/resource acceptance thresholds live in `Tests/Performance/README.md` and `docs/MEMORY_REVIEW.md`.
 - Before tagging a release, also run a fresh release build with `-Xswiftc -warnings-as-errors`. GitHub's macOS runner may promote Swift concurrency diagnostics that are only warnings in a cached local build.
 
 ## Commit & Pull Request Guidelines
