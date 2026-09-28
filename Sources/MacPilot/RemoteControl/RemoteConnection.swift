@@ -313,8 +313,7 @@ final class RemoteConnection: Identifiable {
             deviceName: host.deviceStore.deviceName,
             paired: paired,
             serverNonce: serverNonce,
-            capabilities: host.advertisedCapabilities
-                + ((message.features ?? []).contains("remoteDesktop") ? [.remoteDesktop] : [])
+            capabilities: RemoteCapability.negotiated(host.advertisedCapabilities + [.remoteDesktop], features: message.features)
         )
         if !paired {
             let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: serverNonce)

@@ -337,7 +337,7 @@ final class RemoteConnectionManager {
             clientID: UUID(uuidString: clientID),
             clientName: clientName,
             clientNonce: nonce,
-            features: ["remoteDesktop"]
+            features: ["remoteDesktop", "dockGroups"]
         )
         try? sendPlain(hello)
     }

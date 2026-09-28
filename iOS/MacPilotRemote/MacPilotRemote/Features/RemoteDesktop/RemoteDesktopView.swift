@@ -30,6 +30,7 @@ struct RemoteDesktopView: View {
                     .accessibilityLabel(appModel.text("desktopDiagnostics"))
             }
             .padding(.horizontal, 18).padding(.vertical, 12)
+            inputStatus
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     videoArea
@@ -56,6 +57,7 @@ struct RemoteDesktopView: View {
                     if trackpad.keyboardActive { trackpad.dismissKeyboard() }
                     else { trackpad.requestKeyboard() }
                 } label: { Label(appModel.text("desktopKeyboard"), systemImage: "keyboard") }
+                .disabled(trackpad.phase != .active)
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel(appModel.text("trackpadSettings"))
             }
@@ -80,6 +82,32 @@ struct RemoteDesktopView: View {
         }
         .onChange(of: scenePhase) { _, phase in desktop.sceneChanged(phase) }
         .sheet(isPresented: $showSettings) { TrackpadSettingsView(model: trackpad) }
+    }
+
+    @ViewBuilder
+    private var inputStatus: some View {
+        if let error = trackpad.beginErrorKey {
+            inputBanner(appModel.text(error), retry: true)
+        } else if trackpad.phase == .disconnected {
+            inputBanner(appModel.text("trackpadDisconnected"), retry: true)
+        } else if trackpad.phase == .entering || trackpad.phase == .reconnecting {
+            inputBanner(appModel.text("stateReconnecting"), retry: false)
+        }
+    }
+
+    private func inputBanner(_ message: String, retry: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+            Text(message).font(.caption)
+            Spacer(minLength: 4)
+            if retry {
+                Button(appModel.text("retry")) { appModel.retry() }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 16).padding(.bottom, 8)
     }
 
     private var videoArea: some View {

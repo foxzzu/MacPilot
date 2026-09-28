@@ -103,7 +103,7 @@ public final class RemoteVideoTransport: @unchecked Sendable {
 
     private func receive() {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 << 10) { [weak self] data, _, done, error in
-            guard let self else { return }
+            guard let self, !self.lock.withLock({ self.closed }) else { return }
             if let data {
                 self.buffer.append(data)
                 do {

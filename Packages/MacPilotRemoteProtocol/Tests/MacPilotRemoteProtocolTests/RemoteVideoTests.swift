@@ -21,7 +21,7 @@ struct RemoteVideoTests {
         #expect(throws: (any Error).self) { try decoder.decode(bodies[0]) }
     }
 
-    @Test func WrongDirectionAndWrongTicketCannotDecryptVideo() throws {
+    @Test func wrongDirectionAndWrongTicketCannotDecryptVideo() throws {
         var encoder = RemoteVideoCodec(secret: secret, serverToClient: true)
         var reflected = RemoteVideoCodec(secret: secret, serverToClient: false)
         var wrongTicket = RemoteVideoCodec(secret: Data(repeating: 8, count: 32), serverToClient: true)
@@ -31,7 +31,7 @@ struct RemoteVideoTests {
         #expect(throws: (any Error).self) { try wrongTicket.decode(body) }
     }
 
-    @Test func TamperedPacketsDoNotAdvanceTheReplayCounter() throws {
+    @Test func tamperedPacketsDoNotAdvanceTheReplayCounter() throws {
         var encoder = RemoteVideoCodec(secret: secret, serverToClient: true)
         var decoder = RemoteVideoCodec(secret: secret, serverToClient: true)
         var buffer = try encoder.encode(RemoteVideoPacket(frameType: .hello))
@@ -42,12 +42,12 @@ struct RemoteVideoTests {
         #expect(try decoder.decode(body).frameType == .hello)
     }
 
-    @Test func OversizeLengthIsRejectedBeforeAllocatingTheFrame() {
+    @Test func oversizeLengthIsRejectedBeforeAllocatingTheFrame() {
         var buffer = Data([0xff, 0xff, 0xff, 0xff])
         #expect(throws: RemoteProtocolError.self) { try RemoteVideoCodec.extractFrames(from: &buffer) }
     }
 
-    @Test func KeyframesCarryParameterSetsAndRejectTruncatedNALs() throws {
+    @Test func keyframesCarryParameterSetsAndRejectTruncatedNALs() throws {
         let frame = RemoteH264Frame(sps: Data([103, 1]), pps: Data([104, 1]), avcc: Data([0, 0, 0, 2, 65, 1]))
         #expect(try RemoteH264Frame.decode(frame.encoded(), keyFrame: true) == frame)
         #expect(throws: RemoteProtocolError.self) { try RemoteH264Frame.decode(Data([0, 0, 0, 0, 0, 0, 0, 20, 65]), keyFrame: false) }
@@ -55,7 +55,7 @@ struct RemoteVideoTests {
         #expect(throws: RemoteProtocolError.self) { try RemoteH264Frame.decode(delta.encoded(), keyFrame: true) }
     }
 
-    @Test func OldControlResponsesStillDecodeWithoutVideoPayload() throws {
+    @Test func oldControlResponsesStillDecodeWithoutVideoPayload() throws {
         let id = UUID()
         let data = Data("{\"version\":1,\"requestID\":\"\(id)\",\"success\":true}".utf8)
         let response = try JSONDecoder().decode(RemoteResponse.self, from: data)
@@ -63,7 +63,18 @@ struct RemoteVideoTests {
         #expect(response.success)
     }
 
-    @Test func VideoCapabilitiesNeverChangeExistingInputEventNumbers() {
+    @Test func legacyPhonesNeverReceiveUnknownDesktopOrDockCapabilityCases() {
+        let advertised: [RemoteCapability] = [.lock, .realtimeInput, .inputPressureStream, .dockGroups, .remoteDesktop]
+        #expect(RemoteCapability.negotiated(advertised, features: nil) == [.lock, .realtimeInput, .inputPressureStream])
+    }
+
+    @Test func newPhonesReceiveOnlyTheFeaturesTheyDeclared() {
+        let advertised: [RemoteCapability] = [.realtimeInput, .dockGroups, .remoteDesktop]
+        #expect(RemoteCapability.negotiated(advertised, features: ["remoteDesktop"]) == [.realtimeInput, .remoteDesktop])
+        #expect(RemoteCapability.negotiated(advertised, features: ["remoteDesktop", "dockGroups"]) == advertised)
+    }
+
+    @Test func videoCapabilitiesNeverChangeExistingInputEventNumbers() {
         #expect(RemoteCommand.beginRemoteVideo.requiresAuthentication)
         #expect(RemoteCommand.remotePointer.requiresAuthentication)
         #expect(RemoteCommand.remoteKey.requiresAuthentication)
