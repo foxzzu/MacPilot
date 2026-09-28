@@ -315,11 +315,14 @@ final class RemoteConnection: Identifiable {
             serverNonce: serverNonce,
             capabilities: RemoteCapability.negotiated(host.advertisedCapabilities + [.remoteDesktop], features: message.features)
         )
-        if !paired {
-            let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: serverNonce)
-            pairingExchange = exchange
-            reply.publicKey = exchange.publicKeyData
-        }
+        // A Mac-side key does not prove the phone still has its copy (e.g.
+        // after switching installs). Both published and current phones fall
+        // back to pairRequest when their key is missing. Offer the exchange
+        // even for a remembered client; begin() still enforces the explicitly
+        // opened pairing window, and no stored key changes before confirmation.
+        let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: serverNonce)
+        pairingExchange = exchange
+        reply.publicKey = exchange.publicKeyData
         host.remoteLog("client hello name=\(clientName ?? "?") paired=\(paired)")
         try sendPlain(reply)
     }

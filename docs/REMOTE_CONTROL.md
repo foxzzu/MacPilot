@@ -80,6 +80,12 @@ three input cases. Bonjour TXT capabilities remain extensible strings: old
 discovery code ignores unknown values. Regression tests freeze the published
 phone enum and exercise hello, authentication, and encrypted state retrieval.
 
+The server hello includes an ephemeral pairing public key even when the Mac
+remembers the client. A phone that lost its local key can then send the existing
+`pairRequest` message. A remembered key is replaced only after the user opens
+the Mac pairing window and confirms its six digit code; ordinary authentication
+continues to use the saved key without starting a pairing exchange.
+
 Every message is preceded by a 4 byte big endian length. The first body byte
 selects the encoding:
 

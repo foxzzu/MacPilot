@@ -826,6 +826,82 @@ struct RemoteConnectionIdleWatchdogTests {
         let capabilities: [PublishedCapability]
         let serverNonce: Data
         let paired: Bool
+        let publicKey: Data?
+    }
+
+    @Test("remembered phones without their key can request a pairing code")
+    func rememberedPhoneCanRecoverItsMissingKeyThroughConfirmedPairing() async throws {
+        let harness = try await startHarness(idleTimeout: 10, idleCheckInterval: 0.1)
+        defer { harness.listener.cancel(); harness.box.connection?.close(); harness.host.pairingManager.closeWindow() }
+        let clientID = UUID()
+        let oldKey = RemoteCrypto.randomData(count: RemoteCrypto.pairingKeyLength)
+        #expect(harness.host.deviceStore.storePairingKey(oldKey, for: clientID.uuidString))
+        harness.host.pairingManager.openWindow(duration: 10)
+        var codeWasPresented = false
+        harness.host.pairingManager.onCodePresented = { _, _ in codeWasPresented = true }
+        let client = try await connectClient(to: harness.port)
+        defer { client.cancel() }
+        let nonce = RemoteCrypto.randomData(count: RemoteCrypto.nonceLength)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .clientHello, clientID: clientID, clientName: "Reinstalled Phone", clientNonce: nonce
+        )), on: client)
+        let hello = try RemoteFrameCodec.decodePlain(PublishedHello.self, from: await receiveFrame(on: client))
+        #expect(hello.paired)
+        let publicKey = try #require(hello.publicKey)
+        let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: hello.serverNonce)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .pairRequest, publicKey: exchange.publicKeyData
+        )), on: client)
+        let requested = try RemoteFrameCodec.decodePlain(RemoteHandshakeMessage.self, from: await receiveFrame(on: client))
+        #expect(requested.kind == .pairResult)
+        #expect(requested.errorCode == nil)
+        #expect(codeWasPresented)
+        let code = try #require(harness.host.pairingManager.displayedCode)
+        #expect(code.count == 6)
+        #expect(try exchange.pairCode(withPeerPublicKey: publicKey) == code)
+        #expect(harness.host.deviceStore.pairingKey(for: clientID.uuidString) == oldKey)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .pairConfirm, pairCode: "invalid"
+        )), on: client)
+        let rejected = try RemoteFrameCodec.decodePlain(RemoteHandshakeMessage.self, from: await receiveFrame(on: client))
+        #expect(rejected.errorCode == .pairingRequired)
+        #expect(harness.host.deviceStore.pairingKey(for: clientID.uuidString) == oldKey)
+        #expect(harness.box.connection?.isAuthenticated == false)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .pairConfirm, pairCode: code
+        )), on: client)
+        let confirmed = try RemoteFrameCodec.decodePlain(RemoteHandshakeMessage.self, from: await receiveFrame(on: client))
+        let newKey = try exchange.pairingKey(withPeerPublicKey: publicKey)
+        #expect(confirmed.errorCode == nil)
+        #expect(confirmed.proof == RemoteCrypto.serverProof(pairingKey: newKey, clientNonce: nonce, serverNonce: hello.serverNonce))
+        #expect(harness.host.deviceStore.pairingKey(for: clientID.uuidString) == newKey)
+        #expect(harness.box.connection?.isAuthenticated == true)
+    }
+
+    @Test("remembered phones cannot replace a key with the pairing window closed")
+    func rememberedPhoneStillNeedsAnOpenPairingWindow() async throws {
+        let harness = try await startHarness(idleTimeout: 5, idleCheckInterval: 0.1)
+        defer { harness.listener.cancel(); harness.box.connection?.close() }
+        let clientID = UUID()
+        let oldKey = RemoteCrypto.randomData(count: RemoteCrypto.pairingKeyLength)
+        #expect(harness.host.deviceStore.storePairingKey(oldKey, for: clientID.uuidString))
+        let client = try await connectClient(to: harness.port)
+        defer { client.cancel() }
+        let nonce = RemoteCrypto.randomData(count: RemoteCrypto.nonceLength)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .clientHello, clientID: clientID, clientName: "Missing Key Phone", clientNonce: nonce
+        )), on: client)
+        let hello = try RemoteFrameCodec.decodePlain(PublishedHello.self, from: await receiveFrame(on: client))
+        #expect(hello.publicKey != nil)
+        let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: hello.serverNonce)
+        try await send(RemoteFrameCodec.encodePlain(RemoteHandshakeMessage(
+            kind: .pairRequest, publicKey: exchange.publicKeyData
+        )), on: client)
+        let reply = try RemoteFrameCodec.decodePlain(RemoteHandshakeMessage.self, from: await receiveFrame(on: client))
+        #expect(reply.errorCode == .pairingRequired)
+        #expect(harness.host.pairingManager.displayedCode == nil)
+        #expect(harness.host.deviceStore.pairingKey(for: clientID.uuidString) == oldKey)
+        #expect(harness.box.connection?.isAuthenticated == false)
     }
 
     @Test("published phone vocabulary survives hello and encrypted authentication")
