@@ -117,20 +117,23 @@ struct TrackpadContainerView: View {
                 }
             }
             Spacer(minLength: 8)
-            if model.keyboardActive {
-                Button {
+            Button {
+                if model.keyboardActive {
                     model.dismissKeyboard()
-                } label: {
-                    Image(systemName: "keyboard.chevron.compact.down")
-                        .font(.body.weight(.medium))
-                        .frame(width: 38, height: 34)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color(.tertiarySystemFill))
-                        )
+                } else {
+                    model.requestKeyboard(focused: true)
                 }
-                .accessibilityLabel(appModel.text("trackpadHideKeyboard"))
+            } label: {
+                Image(systemName: model.keyboardActive ? "keyboard.chevron.compact.down" : "keyboard")
+                    .font(.body.weight(.medium))
+                    .frame(width: 38, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color(.tertiarySystemFill))
+                    )
             }
+            .disabled(!model.phase.isActiveLike)
+            .accessibilityLabel(appModel.text(model.keyboardActive ? "trackpadHideKeyboard" : "trackpadShowKeyboard"))
             Button {
                 showSettings = true
             } label: {

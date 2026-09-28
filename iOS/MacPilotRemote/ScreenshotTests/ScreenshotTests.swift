@@ -73,4 +73,33 @@ final class ScreenshotTests: XCTestCase {
         sleep(3)
         capture("04-settings")
     }
+
+    @MainActor
+    func testConnectionPriorityCanBeReorderedAndPersists() {
+        let app = launchAndSettle()
+        app.tabBars.buttons.element(boundBy: 2).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        let bluetooth = app.staticTexts["connectionPriority.bluetooth"]
+        let lan = app.staticTexts["connectionPriority.localNetwork"]
+        XCTAssertTrue(bluetooth.waitForExistence(timeout: 5))
+        XCTAssertTrue(lan.exists)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let x = app.frame.width * 0.9
+        origin.withOffset(CGVector(dx: x, dy: bluetooth.frame.midY))
+            .press(forDuration: 0.8, thenDragTo: origin.withOffset(CGVector(dx: x, dy: lan.frame.minY)))
+        XCTAssertLessThan(bluetooth.frame.midY, lan.frame.midY)
+        capture("05-connection-priority")
+        app.terminate()
+        app.launch()
+        app.tabBars.buttons.element(boundBy: 2).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        XCTAssertLessThan(bluetooth.frame.midY, lan.frame.midY)
+        // Restore the default order for subsequent screenshot runs.
+        let awdl = app.staticTexts["connectionPriority.awdl"]
+        origin.withOffset(CGVector(dx: x, dy: bluetooth.frame.midY))
+            .press(forDuration: 0.8, thenDragTo: origin.withOffset(CGVector(dx: x, dy: awdl.frame.maxY + 10)))
+        XCTAssertGreaterThan(bluetooth.frame.midY, awdl.frame.midY)
+    }
 }

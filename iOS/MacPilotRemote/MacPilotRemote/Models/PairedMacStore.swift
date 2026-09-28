@@ -1,4 +1,5 @@
 import Foundation
+import MacPilotRemoteTransport
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -22,12 +23,22 @@ final class PairedMacStore: ObservableObject {
         didSet { defaults.set(clientName, forKey: Self.clientNameKey) }
     }
 
+    @Published private(set) var connectionPriority: [RemoteConnectionMethod]
+
+    func setConnectionPriority(_ order: [RemoteConnectionMethod]) {
+        connectionPriority = RemoteConnectionPriority.normalized(order.map(\.rawValue))
+        defaults.set(connectionPriority.map(\.rawValue), forKey: "MacPilotRemote.connectionPriority")
+    }
+
     let clientID: String
 
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        connectionPriority = RemoteConnectionPriority.normalized(
+            defaults.stringArray(forKey: "MacPilotRemote.connectionPriority") ?? []
+        )
         // Stable per install; identifies this iPhone to every Mac it pairs with.
         if let existing = defaults.string(forKey: Self.clientIDKey) {
             clientID = existing

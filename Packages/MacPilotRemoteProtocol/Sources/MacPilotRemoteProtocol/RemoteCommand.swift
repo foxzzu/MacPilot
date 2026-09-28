@@ -82,4 +82,17 @@ public enum RemoteCapability: String, Codable, Sendable, CaseIterable, Equatable
     /// so the phone hides the whole section instead of sending it.
     case dockGroups
     case remoteDesktop
+
+    /// These additions postdate the legacy typed capability list. Old peers
+    /// ignore the string-based client feature field but cannot decode new enum
+    /// cases, so only send them after the client explicitly opts in.
+    public static func negotiated(_ advertised: [Self], features: [String]?) -> [Self] {
+        let known = Set(features ?? [])
+        return advertised.filter { capability in
+            switch capability {
+            case .remoteDesktop, .dockGroups: known.contains(capability.rawValue)
+            default: true
+            }
+        }
+    }
 }

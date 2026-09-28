@@ -313,8 +313,7 @@ final class RemoteConnection: Identifiable {
             deviceName: host.deviceStore.deviceName,
             paired: paired,
             serverNonce: serverNonce,
-            capabilities: host.advertisedCapabilities
-                + ((message.features ?? []).contains("remoteDesktop") ? [.remoteDesktop] : [])
+            capabilities: RemoteCapability.negotiated(host.advertisedCapabilities + [.remoteDesktop], features: message.features)
         )
         if !paired {
             let exchange = RemotePairingExchange(clientNonce: nonce, serverNonce: serverNonce)
@@ -540,7 +539,7 @@ final class RemoteConnection: Identifiable {
         let success: Bool
         switch request.command {
         case .beginTextInput:
-            success = host.inputCoordinator.beginTextInput(connectionID: id, focused: request.payload == Data([1]) && videoSession != nil)
+            success = host.inputCoordinator.beginTextInput(connectionID: id, focused: request.payload == Data([1]))
         case .textInput:
             guard let operation = try? RemoteTextInputOperation.decoded(from: request.payload) else {
                 return RemoteResponse(requestID: request.requestID, success: false,

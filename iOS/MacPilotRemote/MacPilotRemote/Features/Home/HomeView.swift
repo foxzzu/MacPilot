@@ -26,7 +26,6 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     deviceCard
-                    desktopEntry
                     actionGrid
                     // Hidden entirely on a Mac that predates the capability:
                     // the trackpad explains itself on tap, but a whole dead
@@ -66,6 +65,9 @@ struct HomeView: View {
                 }
             }
         }
+        .onChange(of: appModel.connectionGeneration) { _, _ in
+            trackpadModel?.connectionReplaced()
+        }
         .onChange(of: appModel.connectionState) { _, _ in
             trackpadModel?.connectionStateChanged(appModel.connectionState)
         }
@@ -92,19 +94,20 @@ struct HomeView: View {
             desktopVisible = true
             openTrackpad()
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "display").font(.title3)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(appModel.text("desktopTitle")).font(.headline)
-                    Text(appModel.text("desktopHint")).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption)
+            VStack(spacing: 4) {
+                Image(systemName: "display").font(.body)
+                Text(appModel.text("desktopTitle"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
             }
-            .padding(16)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .frame(minHeight: 72)
+            .padding(.horizontal, 12)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(appModel.text("desktopTitle"))
+        .accessibilityHint(appModel.text("desktopHint"))
     }
 
     // MARK: - Trackpad
@@ -130,11 +133,12 @@ struct HomeView: View {
 
     // MARK: - Device card
 
-    /// Device switcher and trackpad entry share one compact top row. The
-    /// trackpad remains the card's back face when opening it flips.
+    /// Device switching and both remote tools share one compact row.
     private var deviceCard: some View {
         HStack(spacing: 0) {
             deviceSwitcher
+            Divider().padding(.vertical, 12)
+            desktopEntry
             Divider().padding(.vertical, 12)
             trackpadRow
         }
@@ -214,7 +218,8 @@ struct HomeView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
             }
-            .frame(width: 88, height: 59)
+            .frame(minHeight: 72)
+            .padding(.horizontal, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

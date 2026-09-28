@@ -10,7 +10,7 @@ security model, and how to build the companion iOS app.
 | --- | --- |
 | No IP or port entry | Bonjour (`_macpilot._tcp`) discovery plus a remembered address for the fast path |
 | No re-pairing | A long lived pairing key in the Keychain on both sides; only the very first connection shows a 6 digit code |
-| Fast connect (< 500 ms typical) | Bonjour, the remembered address and Bluetooth are dialled at the same time; whichever authenticates first wins, so no path waits behind another |
+| Fast connect (< 500 ms typical) | Bonjour, the remembered address and Bluetooth are dialled at the same time; the first authenticated link is usable immediately and higher-priority links can take over |
 | No IP scanning, no UDP broadcast, no HTTP | `NWBrowser` + `NWListener` on `NWParameters.tcp` |
 | The Mac login password never leaves the Mac | The protocol has no password field; unlocking happens locally through `MacScreenControlService` |
 
@@ -152,6 +152,21 @@ Dismissal and leaving the trackpad send `endTextInput`; disconnect also clears
 the Mac's per-connection target. This feature needs the Mac's Accessibility
 grant. Custom controls that do not expose a standard editable Accessibility
 role or do not accept Unicode keyboard events may not support remote typing.
+Focus is resolved through the foreground application's Accessibility object,
+because Electron apps can fail the system-wide focused-element query. If a
+WebView hit-test returns a surrounding container instead of its editable child,
+the already-focused editable field can be used only when it belongs to the
+hit-tested process and its screen bounds contain the pointer. Clicking outside
+that field cannot reopen the keyboard through this fallback. Focused text
+descendants are normalized to their editable ancestor before each operation.
+The trackpad's keyboard button is always visible (disabled while disconnected).
+It opens or dismisses the keyboard. Opening sends the existing focused-mode
+`beginTextInput` payload `0x01` over any authenticated, armed input connection,
+including Bluetooth; no video session is required. This explicit typing intent
+can bind a custom editor without a standard editable AX role, while automatic
+tap probes still require one. Each operation must still match the pinned
+foreground focus. Older Macs may reject the explicit request or use their
+existing pointer-based detection, without any new command or frame format.
 While the phone keyboard is open, a trackpad click rechecks the pointer's Mac
 Accessibility target after sending the click. Clicking ordinary content closes
 the phone keyboard; clicking another editable field keeps it open and binds
@@ -317,17 +332,27 @@ link to finish the authenticated handshake becomes the session:
 | Bluetooth | An L2CAP channel the Mac opens to the phone | The only path that needs no shared network at all |
 
 Each candidate is a complete connection — its own transport, framing, handshake
-and session key — so a slow path can never hold up a fast one. The first to
-authenticate is promoted; the rest are torn down before the swap, and their
-failures never reach the UI. A race in which no candidate produces a transport
+and session key — so a slow path can never hold up a fast one. Settings stores a
+user-sortable physical-link priority, defaulting to LAN → AWDL → Bluetooth.
+Bonjour results retain their interfaces: LAN candidates exclude peer-to-peer,
+and AWDL candidates bind to the discovered AWDL interface. Remembered addresses
+are additional candidates for their physical path. The first authenticated link
+is promoted immediately. Higher-priority candidates keep running; once authenticated,
+they replace the current session. Equal/lower-priority candidates are closed and
+cannot preempt it. Failed upgrades never interrupt the usable session. Higher-priority
+paths retry while foregrounded, including interfaces discovered after connecting.
+Changing the order applies immediately and is persisted on the phone. Switching
+also re-arms trackpad input and restarts remote video on the new session. A race in which no candidate produces a transport
 within 4 seconds is abandoned and redialled, but a candidate that is already
-mid-handshake is never cut.
+mid-handshake is never cut during initial connection. Background upgrade attempts
+are retried after 15 seconds if their handshake stalls, without closing the active link.
 
 Bluetooth takes part from the first attempt instead of waiting for the network to
 fail. That is what makes it useful — establishing the link takes seconds, so
 starting it late means arriving late — and the cost is a radio advertisement for
 as long as the app is open and disconnected. It stops the moment any link carries
-a session.
+a session, unless Bluetooth still ranks above that session. An active Bluetooth
+stream keeps its peripheral alive until a higher-priority connection replaces it.
 
 **A first pairing is deliberately not raced.** The Mac displays exactly one
 confirmation code, and two concurrent pair requests would each derive their own,
