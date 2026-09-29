@@ -110,6 +110,7 @@ Everything persisted under `StoredConfiguration` (`config.json` + sidecar files)
 - **Never remove or rename an encoded Codable key.** Deprecate in place: stop using it in the UI/logic but keep the stored property and always encode it (`AwakeSessionProfileConfiguration.endCalculation` is the reference case).
 - **New fields must decode tolerantly** — `decodeIfPresent` + default, never a required key; keep the required-key set identical to what the oldest supported release writes.
 - **Section isolation:** `StoredConfiguration.init(from:)` decodes every section through its `section(...)` helper; one unreadable section falls back to that section's defaults and is recorded in `unreadableSections` so `load()` quarantines the raw file before any save. Do not bypass this helper for persisted sections.
+- **The tripwire test** `Tests/MacPilotTests/ConfigurationSchemaContractTests.swift` asserts every persisted type still encodes its historical key set (append-only). A failing contract means your change would strand downgrades — keep the key, don't delete the assertion.
 
 ## Project Summary
 
