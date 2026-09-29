@@ -536,6 +536,9 @@ final class ScreenCaptureModel: ObservableObject, ManagedFeature {
     private var isDelayedCaptureCounting = false
     private var captureTask: Task<Void, Never>?
     private var permissionPollTask: Task<Void, Never>?
+    /// Only touched from the main actor and from deinit, which runs after the
+    /// last strong reference is gone — no concurrent access is possible.
+    nonisolated(unsafe) private var permissionRecoveryObserver: NSObjectProtocol?
     private var diskUsageRevision = 0
     private let lastAreaDefaultsKey = "MacPilot.smartCapture.lastArea"
     private var smartCapture: SmartScreenshotController?
@@ -631,6 +634,9 @@ final class ScreenCaptureModel: ObservableObject, ManagedFeature {
     deinit {
         captureTask?.cancel()
         permissionPollTask?.cancel()
+        if let permissionRecoveryObserver {
+            NotificationCenter.default.removeObserver(permissionRecoveryObserver)
+        }
     }
 
     func shutdown() {
@@ -676,6 +682,7 @@ final class ScreenCaptureModel: ObservableObject, ManagedFeature {
     }
 
     func activateFromConfiguration() {
+        installPermissionRecovery()
         CloudManager.shared.apply(settings: settings.imageHosting)
         captureHistory = SmartCaptureHistoryStore.load()
         updateSmartCaptureRuntime()
@@ -1784,6 +1791,37 @@ final class ScreenCaptureModel: ObservableObject, ManagedFeature {
                     }
                 }
                 if granted { break }
+            }
+        }
+    }
+
+    /// Screen-recording consent returned while running (the watcher posts this
+    /// after the user re-confirms in System Settings, typically following an
+    /// app update). Clear every latched denied state and bring the auto loop
+    /// back, so re-confirming consent never requires an app restart.
+    func handleScreenRecordingPermissionGranted() {
+        hasScreenPermission = true
+        // The permission failure paths report through different strings
+        // (localized hint vs. enum description); the flag, not the text,
+        // marks a message as permission-related.
+        if isPermissionError {
+            errorMessage = nil
+        }
+        isPermissionError = false
+        permissionPollTask?.cancel()
+        permissionPollTask = nil
+        checkAndStartCapture()
+    }
+
+    private func installPermissionRecovery() {
+        guard permissionRecoveryObserver == nil else { return }
+        permissionRecoveryObserver = NotificationCenter.default.addObserver(
+            forName: .screenRecordingPermissionGranted,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleScreenRecordingPermissionGranted()
             }
         }
     }

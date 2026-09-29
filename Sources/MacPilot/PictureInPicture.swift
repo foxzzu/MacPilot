@@ -1994,6 +1994,9 @@ final class PictureInPictureModel: ObservableObject, ManagedFeature {
     private var isLoading = false
     private var isMonitoring = false
     private var threeFingerGestureActive = false
+    /// Only touched from the main actor and from deinit, which runs after the
+    /// last strong reference is gone — no concurrent access is possible.
+    nonisolated(unsafe) private var permissionRecoveryObserver: NSObjectProtocol?
 
     func applyLoadedSettings(_ newSettings: PictureInPictureSettings) {
         isLoading = true
@@ -2011,12 +2014,39 @@ final class PictureInPictureModel: ObservableObject, ManagedFeature {
     }
 
     func activateFromConfiguration() {
+        installPermissionRecovery()
         hasScreenPermission = CGPreflightScreenCaptureAccess()
         hasAccessibilityPermission = AXIsProcessTrusted()
         guard settings.isEnabled else { return }
         occlusionController.activate()
         startMonitoring()
         handleLaunchArguments()
+    }
+
+    /// Screen-recording consent returned while running (typically after the
+    /// user re-confirmed it following an app update). PiP sessions are created
+    /// lazily per window, so refreshing the latched permission state and
+    /// ensuring the monitor is up is all the recovery that is needed.
+    func handleScreenRecordingPermissionGranted() {
+        hasScreenPermission = true
+        if errorMessage == PictureInPictureError.permissionRequired.errorDescription {
+            errorMessage = nil
+        }
+        guard settings.isEnabled else { return }
+        startMonitoring()
+    }
+
+    private func installPermissionRecovery() {
+        guard permissionRecoveryObserver == nil else { return }
+        permissionRecoveryObserver = NotificationCenter.default.addObserver(
+            forName: .screenRecordingPermissionGranted,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleScreenRecordingPermissionGranted()
+            }
+        }
     }
 
     func setEnabled(_ enabled: Bool) {

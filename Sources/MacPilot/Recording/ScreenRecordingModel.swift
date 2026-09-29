@@ -132,6 +132,9 @@ final class ScreenRecordingModel: ObservableObject {
     /// the primary toggle shortcut.
     private var hotKeyRefs: [EventHotKeyRef?] = []
     private var hotKeyEventHandler: EventHandlerRef?
+    /// Only touched from the main actor and from deinit, which runs after the
+    /// last strong reference is gone — no concurrent access is possible.
+    nonisolated(unsafe) private var permissionRecoveryObserver: NSObjectProtocol?
 
     /// Windows belonging to this app that must remain capturable while
     /// `excludeSelf` is on (the camera/iDevice/mouse/magnifier overlays).
@@ -142,10 +145,30 @@ final class ScreenRecordingModel: ObservableObject {
         "Screen Magnifier"
     ]
 
+    init() {
+        // Screen-recording consent re-confirmed after an app update: recording
+        // stays user-initiated, but the latched permission error must clear so
+        // the UI stops claiming a permission that macOS has granted again.
+        permissionRecoveryObserver = NotificationCenter.default.addObserver(
+            forName: .screenRecordingPermissionGranted,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self,
+                      self.errorMessage == self.localized(ScreenRecordingError.permissionRequired) else { return }
+                self.errorMessage = nil
+            }
+        }
+    }
+
     deinit {
         startTask?.cancel()
         stopTask?.cancel()
         timerTask?.cancel()
+        if let permissionRecoveryObserver {
+            NotificationCenter.default.removeObserver(permissionRecoveryObserver)
+        }
     }
 
     func applyLoadedSettings(_ settings: ScreenRecordingSettings, activate: Bool = true) {

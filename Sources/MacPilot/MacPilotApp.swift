@@ -721,7 +721,7 @@ enum AppText {
         "scGrantPermission": "授权屏幕录制…", "scOpenPermissionSettings": "打开屏幕录制设置",
         "scResetPermission": "重置权限并退出", "scResettingPermission": "正在重置…",
         "scPermissionRecoveryHint": "如果系统设置中已经允许但仍无法截屏，请重置旧的屏幕录制授权记录。",
-        "scPermissionRestartHint": "授权后请重启 MacPilot；如果仍无法截屏，请重置权限并退出。",
+        "scPermissionRestartHint": "授权后会自动恢复，无需重启 MacPilot；如果仍无法截屏，请重置权限并退出。",
         "scPermissionResetFailed": "无法重置屏幕录制权限：%@", "scPermissionResetStatus": "tccutil 退出状态：%d",
         "scStatusRunning": "运行中", "scCaptureCount": "截屏次数", "scScreenshotCount": "截图数量",
         "scDiskUsage": "磁盘占用", "scLastCapture": "上次截屏", "scLastSize": "上次大小",
@@ -1797,7 +1797,7 @@ enum AppText {
             "scGrantPermission": "Grant Screen Recording…", "scOpenPermissionSettings": "Open Screen Recording Settings",
             "scResetPermission": "Reset Permission and Quit", "scResettingPermission": "Resetting…",
             "scPermissionRecoveryHint": "If System Settings already allows access but capture still fails, reset the stale Screen Recording permission record.",
-            "scPermissionRestartHint": "Grant access, then restart MacPilot. If capture still fails, reset the permission and quit.",
+            "scPermissionRestartHint": "Capture recovers automatically once access is granted — no restart needed. If it still fails, reset the permission and quit.",
             "scPermissionResetFailed": "Couldn’t reset Screen Recording access: %@", "scPermissionResetStatus": "tccutil exited with status %d",
             "scStatusRunning": "Running", "scCaptureCount": "Capture runs", "scScreenshotCount": "Screenshots",
             "scDiskUsage": "Disk usage", "scLastCapture": "Last capture", "scLastSize": "Last size",
@@ -2164,6 +2164,10 @@ final class MacPilotModel: ObservableObject {
     let screenRecording = ScreenRecordingModel()
     lazy var screenRecordingFeature = ScreenRecordingFeature(recorder: screenRecording)
     let pictureInPicture = PictureInPictureModel()
+    /// macOS 会在应用被替换（每次更新）后重置屏幕录制授权的确认状态；
+    /// 守望器在授权缺失时轮询、回到前台时复检，授权恢复即广播自愈，
+    /// 用户不再需要重启应用。
+    let screenPermissionWatcher = ScreenRecordingPermissionWatcher()
     let inputSources = InputSourceModel()
     let windowSwitcher = WindowSwitcherModel()
     let smoothScrolling = SmoothScrollModel()
@@ -2464,6 +2468,13 @@ final class MacPilotModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 await updater?.checkForUpdates()
             }
+        }
+        // 捕获类功能开着而屏幕录制授权正待重新确认时开始监视；授权恢复后
+        // 各功能通过通知自愈，用户不需要重启应用。
+        let needsScreenPermission = [.capture, .screenRecording, .pictureInPicture, .remoteControl]
+            .contains { isFeatureEnabled($0) }
+        if needsScreenPermission {
+            screenPermissionWatcher.beginWatchingIfDenied()
         }
     }
 
