@@ -70,12 +70,6 @@ struct ConfigurationSnapshotManager {
         let estimatedBytes = estimateConfigurationBytes() + additionalBytes + Self.safetyMarginBytes
         try ensureDiskSpace(availableForImportantUsage: estimatedBytes)
 
-        // A new snapshot demotes the previous active protection to history:
-        // only one downgrade test can be current at a time.
-        for existing in loadSnapshots() where existing.manifest.status == .downgradeActive {
-            updateStatus(of: existing, to: .ready)
-        }
-
         let directory = snapshotsDirectory.appendingPathComponent(
             snapshotDirectoryName(context: context), isDirectory: true
         )
@@ -152,6 +146,11 @@ struct ConfigurationSnapshotManager {
             manifest.status = .corrupted
             try? write(manifest, to: manifestURL)
             throw error
+        }
+        // 只有新快照真正可用后才把旧的当前保护降级为历史：新快照创建失败的
+        // 时候，正在进行的降级测试仍保有它的保护点。
+        for existing in loadSnapshots() where existing.manifest.status == .downgradeActive {
+            updateStatus(of: existing, to: .ready)
         }
         pruneSnapshots()
         return CreateResult(manifest: manifest, directory: directory)
@@ -339,9 +338,10 @@ struct ConfigurationSnapshotManager {
             )
         }
         for entry in manifest.files where entry.relativePath.hasPrefix("dock-groups/") {
+            let remainder = String(entry.relativePath.dropFirst("dock-groups/".count))
             try commitStaged(
                 staged: staging.appendingPathComponent(entry.relativePath),
-                destination: configDirectory.appendingPathComponent(entry.relativePath)
+                destination: dockGroupsDirectory.appendingPathComponent(remainder)
             )
         }
         if manifest.includesRightClickDatabase {

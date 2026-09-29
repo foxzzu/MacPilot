@@ -22,8 +22,8 @@ struct ConfigurationSnapshotTests {
         try! Data(string.utf8).write(to: url)
     }
 
-    private func read(_ url: URL) -> String {
-        String(decoding: try! Data(contentsOf: url), as: UTF8.self)
+    private func read(_ url: URL) throws -> String {
+        String(decoding: try Data(contentsOf: url), as: UTF8.self)
     }
 
     private func snapshotContext(
@@ -96,10 +96,10 @@ struct ConfigurationSnapshotTests {
 
         // 恢复后逐项等于快照。
         try manager.restore(result.manifest, applyPreferences: false, restoreKeychain: false)
-        #expect(read(config.appendingPathComponent("config.json")) == #"{"quitAfter":30,"version":26}"#)
-        #expect(read(config.appendingPathComponent("features.json")) == #"{"enabledFeatures":["exit"]}"#)
-        #expect(read(dockGroups.appendingPathComponent("groups.json")) == #"{"groups":[{"id":"g1"}]}"#)
-        #expect(read(dockGroups.appendingPathComponent("Icons/g1.png")) == "PNGDATA")
+        #expect(try read(config.appendingPathComponent("config.json")) == #"{"quitAfter":30,"version":26}"#)
+        #expect(try read(config.appendingPathComponent("features.json")) == #"{"enabledFeatures":["exit"]}"#)
+        #expect(try read(dockGroups.appendingPathComponent("groups.json")) == #"{"groups":[{"id":"g1"}]}"#)
+        #expect(try read(dockGroups.appendingPathComponent("Icons/g1.png")) == "PNGDATA")
         #expect(manager.loadSnapshots().first?.manifest.status == .restored)
     }
 
@@ -133,7 +133,7 @@ struct ConfigurationSnapshotTests {
         #expect(throws: (any Error).self) {
             try manager.restore(result.manifest, applyPreferences: false, restoreKeychain: false)
         }
-        #expect(read(config.appendingPathComponent("config.json")) == #"{"a":1}"#)
+        #expect(try read(config.appendingPathComponent("config.json")) == #"{"a":1}"#)
     }
 
     @Test func activeDowngradeSnapshotRefusesDeletionAndAutoPruning() throws {
@@ -191,6 +191,6 @@ struct ConfigurationSnapshotTests {
         let result = try manager.create(
             context: snapshotContext(target: "1.1.479", intent: .channelSwitch, merged: merged)
         )
-        #expect(read(result.directory.appendingPathComponent("merged-config.json")) == #"{"merged":true,"quitAfter":30}"#)
+        #expect(try read(result.directory.appendingPathComponent("merged-config.json")) == #"{"merged":true,"quitAfter":30}"#)
     }
 }
