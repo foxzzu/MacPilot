@@ -73,6 +73,43 @@ struct VersionSwitchRecoveryTests {
         #expect(record.phase == .completed)
     }
 
+    @Test func awaitingRelaunchWithoutTheTargetVersionRunningIsArchivedAsFailed() throws {
+        // updater 等待进程退出超时后放弃,bundle 从未被替换,事务却停在
+        // awaitingRelaunch:重启后必须如实记为失败,而不是标成完成。
+        let base = makeBase()
+        defer { try? fileManager.removeItem(at: base.base) }
+        let store = VersionSwitchTransactionStore(rootDirectory: base.vm)
+        try! store.save(VersionSwitchTransaction(
+            id: UUID(),
+            sourceVersion: "1.1.482-beta.2",
+            sourceChannel: .beta,
+            targetVersion: "1.1.479",
+            targetChannel: .stable,
+            intent: .manualDowngrade,
+            startedAt: Date(),
+            snapshotID: nil,
+            restoreSnapshotID: nil,
+            phase: .awaitingRelaunch,
+            updatedAt: Date()
+        ))
+
+        VersionSwitchStartup.run(
+            rootDirectory: base.vm,
+            configDirectory: base.config,
+            runningVersion: "1.1.482-beta.2"
+        )
+
+        #expect(store.loadActive() == nil)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let files = (try? fileManager.contentsOfDirectory(
+            at: store.directory, includingPropertiesForKeys: nil
+        ))?.filter { $0.lastPathComponent != "active.json" } ?? []
+        let data = try Data(contentsOf: try #require(files.first))
+        let record = try decoder.decode(VersionSwitchTransaction.self, from: data)
+        #expect(record.phase == .failed, "版本没变说明替换从未发生")
+    }
+
     @Test func switchInterruptedBeforeInstallIsArchivedAsFailed() throws {
         let base = makeBase()
         defer { try? fileManager.removeItem(at: base.base) }

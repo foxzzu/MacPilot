@@ -467,8 +467,18 @@ final class SoftwareUpdater: ObservableObject {
         }
     }
 
+    /// The updater helper polls for this process to exit and gives up after
+    /// 60 seconds (UpdaterMain.waitForParent). NSApp.terminate is a silent
+    /// no-op while any window still has a sheet attached — the Version
+    /// Manager sheet is necessarily open for every manual switch — so after
+    /// requesting the graceful quit we fall back to a hard exit well inside
+    /// the helper's window. Everything the switch needed to persist is
+    /// already on disk by the time awaitingRelaunch is reached.
     func requestTerminateAfterInstall() {
         NSApp.terminate(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            exit(0)
+        }
     }
 }
 

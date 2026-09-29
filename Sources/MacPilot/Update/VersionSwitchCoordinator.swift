@@ -360,7 +360,7 @@ enum VersionSwitchStartup {
         let store = VersionSwitchTransactionStore(rootDirectory: rootDirectory)
         guard var transaction = store.loadActive() else { return }
         switch transaction.phase {
-        case .replacingApplication, .awaitingRelaunch, .runningTarget:
+        case .runningTarget:
             transaction.phase = .completed
             transaction.updatedAt = Date()
             store.archive(transaction)
@@ -368,6 +368,28 @@ enum VersionSwitchStartup {
                 "SoftwareUpdate",
                 "Version switch completed: \(transaction.sourceVersion) -> \(transaction.targetVersion)"
             )
+        case .replacingApplication, .awaitingRelaunch:
+            // The relaunch phases alone do not prove the updater replaced the
+            // bundle: when it gave up waiting for this process to exit, the
+            // transaction stayed behind at awaitingRelaunch. Trust the running
+            // version, and record an abandoned switch as what it is.
+            if transaction.targetVersion == runningVersion {
+                transaction.phase = .completed
+                transaction.updatedAt = Date()
+                store.archive(transaction)
+                DiagnosticLog.write(
+                    "SoftwareUpdate",
+                    "Version switch completed: \(transaction.sourceVersion) -> \(transaction.targetVersion)"
+                )
+            } else {
+                transaction.phase = .failed
+                transaction.updatedAt = Date()
+                store.archive(transaction)
+                DiagnosticLog.write(
+                    "SoftwareUpdate",
+                    "Version switch never replaced the app (still running \(runningVersion), wanted \(transaction.targetVersion)); archived as failed"
+                )
+            }
         default:
             // Interrupted before the updater ever replaced the app. Nothing
             // was modified; keep the record for diagnosis.
