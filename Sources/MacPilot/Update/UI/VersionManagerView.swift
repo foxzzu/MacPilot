@@ -443,6 +443,21 @@ struct ConfigurationSnapshotsView: View {
                     snapshotRow(record)
                 }
             }
+            .confirmationDialog(
+                t("versionManagerRestoreConfigurationTitle"),
+                isPresented: Binding(
+                    get: { versionManager.showsConfigurationRestoreConfirmation },
+                    set: { if !$0 { versionManager.cancelConfigurationRestoreConfirmation() } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(t("versionManagerRestoreConfigurationConfirm")) {
+                    versionManager.confirmConfigurationRestore()
+                }
+                Button(t("cancel"), role: .cancel) {}
+            } message: {
+                Text(t("versionManagerRestoreConfigurationMessage"))
+            }
         }
     }
 
@@ -472,6 +487,11 @@ struct ConfigurationSnapshotsView: View {
                     versionManager.requestRestore(record)
                 }
                 .disabled(isBusy || !versionManager.canRestoreActiveSnapshot)
+            } else if record.manifest.status == .ready || record.manifest.status == .restored {
+                Button(t("versionManagerRestoreConfiguration")) {
+                    versionManager.requestConfigurationRestore(record)
+                }
+                .disabled(isBusy || versionManager.isRestoringConfiguration)
             }
             Button {
                 versionManager.reveal(record)

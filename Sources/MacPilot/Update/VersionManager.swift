@@ -14,6 +14,9 @@ final class VersionManager: ObservableObject {
     @Published var lastErrorMessage: String?
     @Published var pendingInstall: CatalogRelease?
     @Published var pendingRestoreRecord: ConfigurationSnapshotManager.SnapshotRecord?
+    @Published var pendingConfigurationRestoreRecord: ConfigurationSnapshotManager.SnapshotRecord?
+    @Published var showsConfigurationRestoreConfirmation = false
+    @Published var isRestoringConfiguration = false
     @Published var showsConfirmation = false
 
     private weak var model: MacPilotModel?
@@ -103,6 +106,51 @@ final class VersionManager: ObservableObject {
     var canRestoreActiveSnapshot: Bool {
         guard let activeSnapshot else { return false }
         return sourceRelease(for: activeSnapshot.manifest)?.compatibility?.supportsVersionManager == true
+    }
+
+    /// 任意 ready 快照的手动恢复：不切换版本，重启后由启动流程回放该快照
+    /// 的全部配置。恢复前自动为当前状态创建保护快照，恢复本身可撤销。
+    func requestConfigurationRestore(_ record: ConfigurationSnapshotManager.SnapshotRecord) {
+        lastErrorMessage = nil
+        pendingConfigurationRestoreRecord = record
+        showsConfigurationRestoreConfirmation = true
+    }
+
+    func cancelConfigurationRestoreConfirmation() {
+        pendingConfigurationRestoreRecord = nil
+        showsConfigurationRestoreConfirmation = false
+    }
+
+    func confirmConfigurationRestore() {
+        guard let record = pendingConfigurationRestoreRecord else {
+            showsConfigurationRestoreConfirmation = false
+            return
+        }
+        pendingConfigurationRestoreRecord = nil
+        showsConfigurationRestoreConfirmation = false
+        isRestoringConfiguration = true
+        do {
+            try coordinator.performConfigurationRestore(of: record.manifest)
+            // 重启由 AppSelfRelauncher 的守望进程执行；这里正常退出应用。
+            // 成功路径不解除冻结：写入保持关闭直到进程退出，重启后的新
+            // 实例在启动时回放恢复点。
+            NSApp.terminate(nil)
+            // 若终止被拦截，兜底解冻，让用户继续使用当前配置。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, self.isRestoringConfiguration else { return }
+                self.isRestoringConfiguration = false
+                self.coordinator.unfreezeAfterRestore()
+            }
+        } catch {
+            isRestoringConfiguration = false
+            DiagnosticLog.write("SoftwareUpdate", "Configuration restore failed: \(String(describing: error))")
+            lastErrorMessage = AppText.value(
+                "versionManagerRestoreConfigurationFailed",
+                language: model?.language ?? .system,
+                String(describing: error)
+            )
+        }
+        reloadSnapshots()
     }
 
     private func sourceRelease(for manifest: ConfigurationSnapshotManifest) -> CatalogRelease? {

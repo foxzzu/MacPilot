@@ -68,6 +68,7 @@ final class VersionSwitchCoordinator: ObservableObject {
     var packageAcquirer: (SoftwareRelease) async throws -> VerifiedUpdatePackage
     var installer: (VerifiedUpdatePackage, UUID?) throws -> Void
     var terminateAfterInstall: () -> Void
+    var scheduleRelaunch: () -> Void
 
     init(
         updater: SoftwareUpdater,
@@ -108,6 +109,7 @@ final class VersionSwitchCoordinator: ObservableObject {
             try updater.launchInstaller(for: package, successTokenID: successTokenID)
         }
         self.terminateAfterInstall = { updater.requestTerminateAfterInstall() }
+        self.scheduleRelaunch = { AppSelfRelauncher.scheduleRelaunch() }
     }
 
     /// Whether a version switch currently owns the app. Shared with the
@@ -160,6 +162,51 @@ final class VersionSwitchCoordinator: ObservableObject {
             prevalidatedPackage: package,
             initialPhase: .verifyingPackage
         )
+    }
+
+    /// 手动恢复一个配置快照：不切换版本，只把该快照的配置回放到下次启动。
+    ///
+    /// 顺序与版本切换同源：冻结配置写入 → flush → 为当前状态创建保护快照
+    /// （恢复动作本身可撤销）→ 登记待恢复请求 → 重启应用。`VersionSwitchStartup`
+    /// 在下次启动、任何配置读取之前消费该请求。冻结保持到进程退出，避免
+    /// 退出前的一次后台写入盖掉刚登记的恢复点。
+    func performConfigurationRestore(of manifest: ConfigurationSnapshotManifest) throws {
+        guard !isSwitching else { throw VersionSwitchError.alreadyRunning }
+        beginSwitching()
+        phase = .preparingConfiguration
+        do {
+            try flushConfiguration()
+            let context = ConfigurationSnapshotManager.SnapshotContext(
+                sourceAppVersion: currentVersion(),
+                sourceChannel: currentChannel(),
+                targetVersion: currentVersion(),
+                targetChannel: currentChannel(),
+                intent: .configurationRestore,
+                remoteClientIDs: remoteClientIDs(),
+                mergedConfiguration: mergedConfiguration(),
+                appRecovery: nil
+            )
+            _ = try snapshotManager.create(context: context)
+            try pendingRestoreStore.save(PendingConfigurationRestore(
+                snapshotID: manifest.id,
+                transactionID: UUID(),
+                requestedAt: Date(),
+                restoreKeychain: true
+            ))
+            scheduleRelaunch()
+        } catch {
+            pendingRestoreStore.clear()
+            phase = nil
+            endSwitching()
+            throw error
+        }
+    }
+
+    /// 恢复已登记但应用没有如期退出时的兜底：解除配置冻结，让用户继续
+    /// 使用当前配置（恢复请求保留，下次启动仍会尝试回放）。
+    func unfreezeAfterRestore() {
+        phase = nil
+        endSwitching()
     }
 
     private func runSwitch(
@@ -310,6 +357,24 @@ final class VersionSwitchCoordinator: ObservableObject {
             .appendingPathComponent("MacPilotRecovery", isDirectory: false)
         try? fileManager.removeItem(at: destination)
         try? fileManager.copyItem(at: bundledHelper, to: destination)
+    }
+}
+
+/// Restarts the app after a standalone configuration restore. A detached
+/// watcher waits for this instance to exit and reopens the bundle, so the
+/// next launch consumes the pending restore before anything reads config.
+enum AppSelfRelauncher {
+    static func scheduleRelaunch(bundleURL: URL = Bundle.main.bundleURL) {
+        let escapedPath = bundleURL.path.replacingOccurrences(of: "'", with: "'\\''")
+        let watcher = Process()
+        watcher.executableURL = URL(fileURLWithPath: "/bin/sh")
+        watcher.arguments = [
+            "-c",
+            "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open '\(escapedPath)'"
+        ]
+        watcher.standardOutput = FileHandle.nullDevice
+        watcher.standardError = FileHandle.nullDevice
+        try? watcher.run()
     }
 }
 

@@ -10,6 +10,8 @@ enum InstallationIntent: String, Codable, Equatable, Sendable {
     case manualUpgrade
     case manualDowngrade
     case channelSwitch
+    /// 保护快照：不是版本切换，而是恢复配置前为当前状态留下的还原点。
+    case configurationRestore
 }
 
 struct SoftwareRelease: Equatable {
@@ -311,6 +313,9 @@ final class SoftwareUpdater: ObservableObject {
                 return
             }
         case .manualUpgrade, .manualDowngrade, .channelSwitch:
+            guard release.version != SoftwareVersion(currentVersion) else { return }
+        case .configurationRestore:
+            // 配置恢复不安装任何版本，不会走到这里；按手动安装的规则兜底。
             guard release.version != SoftwareVersion(currentVersion) else { return }
         }
         do {

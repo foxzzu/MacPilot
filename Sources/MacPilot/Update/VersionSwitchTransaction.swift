@@ -39,7 +39,7 @@ extension InstallationIntent {
     var allowsConfigurationRestore: Bool {
         switch self {
         case .automatic: false
-        case .manualUpgrade, .manualDowngrade, .channelSwitch: true
+        case .manualUpgrade, .manualDowngrade, .channelSwitch, .configurationRestore: true
         }
     }
 }
