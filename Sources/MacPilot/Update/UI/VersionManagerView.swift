@@ -188,7 +188,9 @@ struct VersionManagerSheet: View {
 
     private var releaseRows: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            // 上百个历史版本时必须懒加载：普通 VStack 会一次性布局所有行，
+            // 打开面板就卡死主线程。
+            LazyVStack(spacing: 12) {
                 let entries = filteredEntries
                 if entries.isEmpty {
                     Text(t("versionManagerEmpty"))

@@ -2,7 +2,9 @@ import Foundation
 
 /// A catalog entry: the verified release plus whatever compatibility manifest
 /// was published for it. `compatibility == nil` means "not published for this
-/// historical release" — compatibility unknown, never guessed.
+/// historical release" — compatibility unknown, never guessed. While a load is
+/// still in flight, `nil` can also mean "manifest not fetched yet"; entries are
+/// patched in place as the manifests arrive.
 struct CatalogRelease: Identifiable, Equatable {
     let release: SoftwareRelease
     let compatibility: ReleaseCompatibility?
@@ -16,6 +18,10 @@ struct CatalogRelease: Identifiable, Equatable {
 
     var compatibilityState: ConfigurationCompatibility {
         ConfigurationCompatibility(release: self)
+    }
+
+    func withCompatibility(_ compatibility: ReleaseCompatibility) -> CatalogRelease {
+        CatalogRelease(release: release, compatibility: compatibility)
     }
 }
 
@@ -53,9 +59,17 @@ enum ReleaseCatalogState: Equatable {
 /// filtered out entirely instead of being shown with a disabled install
 /// button. Results are cached for five minutes so repeatedly opening the page
 /// does not walk the GitHub API each time; a manual refresh bypasses the cache.
+///
+/// Repositories accumulate hundreds of releases, so loading is incremental:
+/// each page is published as soon as it is decoded, and the per-release
+/// compatibility manifests are then fetched in small concurrent batches that
+/// patch the already-visible rows. The sheet is interactive within the first
+/// page instead of waiting for every page and every manifest.
 @MainActor
 final class ReleaseCatalogService: ObservableObject {
     static let cacheInterval: TimeInterval = 300
+    /// 兼容性清单按小批并发拉取；一批完成就补进列表，避免逐个串行等待。
+    static let compatibilityBatchSize = 6
 
     @Published private(set) var state: ReleaseCatalogState = .idle
 
@@ -64,7 +78,9 @@ final class ReleaseCatalogService: ObservableObject {
     private let architecture: AppArchitecture
     private let now: () -> Date
     /// Injectable transport so tests stay deterministic without real network.
-    private let performRequest: (URLRequest) async throws -> (Data, URLResponse)
+    /// `@Sendable` because compatibility manifests are fetched from detached
+    /// batch tasks, not just from this actor.
+    private let performRequest: @Sendable (URLRequest) async throws -> (Data, URLResponse)
     private var cache: VersionCatalog?
     private var loadTask: Task<Void, Never>?
 
@@ -73,7 +89,7 @@ final class ReleaseCatalogService: ObservableObject {
         currentVersion: String = AppVersionInfo.current().version,
         architecture: AppArchitecture = .current,
         now: @escaping () -> Date = Date.init,
-        performRequest: ((URLRequest) async throws -> (Data, URLResponse))? = nil
+        performRequest: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
     ) {
         self.session = session
         self.currentVersion = currentVersion
@@ -116,30 +132,56 @@ final class ReleaseCatalogService: ObservableObject {
     }
 
     private func fetchCatalog() async throws -> VersionCatalog {
-        var responses: [GitHubReleaseResponse] = []
+        var entries: [CatalogRelease] = []
         var page = 1
         while true {
-            let url = URL(string: "https://api.github.com/repos/\(AppIdentity.githubRepository)/releases?per_page=100&page=\(page)")!
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 20
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            request.setValue("MacPilot/\(currentVersion)", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await performRequest(request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw SoftwareUpdateError.invalidResponse
-            }
-            guard httpResponse.statusCode == 200 else {
-                throw SoftwareUpdateError.invalidResponse
-            }
-            responses += try JSONDecoder().decode([GitHubReleaseResponse].self, from: data)
-            guard httpResponse.value(forHTTPHeaderField: "Link")?.contains("rel=\"next\"") == true else {
-                break
-            }
+            let (responses, hasNextPage) = try await fetchReleasesPage(page)
+            let fresh = installableEntries(from: responses)
+            // 兼容性清单尚未拉取，先按"未知"上架：首屏不等所有分页和清单。
+            let baseIndex = entries.count
+            entries += fresh.map(\.entry)
+            publish(entries)
+            entries = await attachCompatibility(
+                to: entries,
+                pairs: fresh.enumerated().map { pair in
+                    (index: baseIndex + pair.offset, response: pair.element.response)
+                }
+            )
+            guard hasNextPage else { break }
             page += 1
         }
+        return VersionCatalog(releases: entries, fetchedAt: now())
+    }
 
-        var entries: [CatalogRelease] = []
-        for response in responses where !response.draft {
+    private func publish(_ entries: [CatalogRelease]) {
+        state = .loaded(VersionCatalog(releases: entries, fetchedAt: now()))
+    }
+
+    private func fetchReleasesPage(_ page: Int) async throws -> (responses: [GitHubReleaseResponse], hasNextPage: Bool) {
+        let url = URL(string: "https://api.github.com/repos/\(AppIdentity.githubRepository)/releases?per_page=100&page=\(page)")!
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("MacPilot/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await performRequest(request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SoftwareUpdateError.invalidResponse
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw SoftwareUpdateError.invalidResponse
+        }
+        let hasNextPage = httpResponse.value(forHTTPHeaderField: "Link")?.contains("rel=\"next\"") == true
+        return (try JSONDecoder().decode([GitHubReleaseResponse].self, from: data), hasNextPage)
+    }
+
+    /// Releases that carry a verified archive for this CPU, paired with their
+    /// API response so the compatibility manifest can be fetched afterwards;
+    /// the manifest itself is attached later by `attachCompatibility`.
+    private func installableEntries(
+        from responses: [GitHubReleaseResponse]
+    ) -> [(response: GitHubReleaseResponse, entry: CatalogRelease)] {
+        responses.compactMap { response in
+            guard !response.draft else { return nil }
             let channel: AppChannel = response.prerelease ? .beta : .stable
             guard let release = try? SoftwareRelease.decode(
                 response,
@@ -148,15 +190,51 @@ final class ReleaseCatalogService: ObservableObject {
             ) else {
                 // No verified archive for this CPU (or the tag does not match
                 // the channel): not installable, so it stays out of the list.
-                continue
+                return nil
             }
-            let compatibility = await VersionCompatibilityService.fetch(
-                for: response,
-                session: session,
-                currentVersion: currentVersion
-            )
-            entries.append(CatalogRelease(release: release, compatibility: compatibility))
+            return (response, CatalogRelease(release: release, compatibility: nil))
         }
-        return VersionCatalog(releases: entries, fetchedAt: now())
+    }
+
+    /// Fetches the compatibility manifests for `pairs` in small concurrent
+    /// batches, patching and republishing the list after each batch so badges
+    /// fill in while the user is already reading the list.
+    private func attachCompatibility(
+        to entries: [CatalogRelease],
+        pairs: [(index: Int, response: GitHubReleaseResponse)]
+    ) async -> [CatalogRelease] {
+        var patched = entries
+        let performRequest = self.performRequest
+        let currentVersion = self.currentVersion
+        for batchStart in stride(from: 0, to: pairs.count, by: Self.compatibilityBatchSize) {
+            let batch = pairs[batchStart..<min(batchStart + Self.compatibilityBatchSize, pairs.count)]
+            let manifests = await withTaskGroup(
+                of: (index: Int, manifest: ReleaseCompatibility?).self
+            ) { group in
+                for pair in batch {
+                    group.addTask {
+                        let manifest = await VersionCompatibilityService.fetch(
+                            for: pair.response,
+                            currentVersion: currentVersion,
+                            performRequest: performRequest
+                        )
+                        return (pair.index, manifest)
+                    }
+                }
+                var collected: [(index: Int, manifest: ReleaseCompatibility?)] = []
+                for await piece in group {
+                    collected.append(piece)
+                }
+                return collected
+            }
+            var changed = false
+            for piece in manifests {
+                guard let manifest = piece.manifest else { continue }
+                patched[piece.index] = patched[piece.index].withCompatibility(manifest)
+                changed = true
+            }
+            if changed { publish(patched) }
+        }
+        return patched
     }
 }

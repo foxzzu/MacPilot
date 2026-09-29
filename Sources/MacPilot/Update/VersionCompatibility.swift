@@ -98,8 +98,8 @@ enum VersionCompatibilityService {
 
     static func fetch(
         for release: GitHubReleaseResponse,
-        session: URLSession,
-        currentVersion: String
+        currentVersion: String,
+        performRequest: @Sendable (URLRequest) async throws -> (Data, URLResponse)
     ) async -> ReleaseCompatibility? {
         guard let asset = release.assets.first(where: { $0.name == assetName(forVersion: release.tagName) }),
               asset.url.scheme == "https" else {
@@ -108,7 +108,7 @@ enum VersionCompatibilityService {
         var request = URLRequest(url: asset.url)
         request.timeoutInterval = 20
         request.setValue("MacPilot/\(currentVersion)", forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await session.data(for: request),
+        guard let (data, response) = try? await performRequest(request),
               (response as? HTTPURLResponse)?.statusCode == 200 else {
             return nil
         }
