@@ -25,10 +25,14 @@ private struct UpdaterArguments {
     let stagingDirectory: URL
     let helperDirectory: URL
     let logURL: URL
+    /// Optional path where this updater records the kept rollback bundle. When
+    /// present, the previous app is preserved until the relaunched version
+    /// proves it runs (it deletes the backup via the token on next launch).
+    let successTokenURL: URL?
 
     init() throws {
         let values = CommandLine.arguments
-        guard values.count == 7, let parentPID = pid_t(values[1]), parentPID > 0 else {
+        guard values.count == 7 || values.count == 8, let parentPID = pid_t(values[1]), parentPID > 0 else {
             throw UpdaterError.invalidArguments
         }
         self.parentPID = parentPID
@@ -37,6 +41,7 @@ private struct UpdaterArguments {
         stagingDirectory = URL(fileURLWithPath: values[4])
         helperDirectory = URL(fileURLWithPath: values[5])
         logURL = URL(fileURLWithPath: values[6])
+        successTokenURL = values.count == 8 ? URL(fileURLWithPath: values[7]) : nil
     }
 }
 
@@ -199,8 +204,25 @@ private func install(_ arguments: UpdaterArguments) throws {
             }
             throw error
         }
-        try? fileManager.removeItem(at: backup)
-        appendLog("Update installed at \(arguments.destinationApplication.path)", to: arguments.logURL)
+        // "The process started" is not "the new version runs". When a success
+        // token path was supplied, keep the backup and record it: the
+        // relaunched app deletes the backup only after it has loaded its
+        // configuration and initialized. Without a token (older callers) the
+        // previous behaviour stands.
+        if let successTokenURL = arguments.successTokenURL {
+            UpdateSuccessToken.write(
+                to: successTokenURL,
+                backupPath: backup.path,
+                targetVersion: arguments.sourceApplication.path
+            )
+            appendLog(
+                "Update installed; rollback bundle kept at \(backup.path)",
+                to: arguments.logURL
+            )
+        } else {
+            try? fileManager.removeItem(at: backup)
+            appendLog("Update installed at \(arguments.destinationApplication.path)", to: arguments.logURL)
+        }
     } catch {
         try? fileManager.removeItem(at: incoming)
         if !fileManager.fileExists(atPath: arguments.destinationApplication.path),

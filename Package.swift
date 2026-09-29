@@ -40,9 +40,21 @@ let package = Package(
                 "MacPilotPowerIPC",
                 "MacPilotDockGroupsCore",
                 "MacPilotLocalPortsCore",
+                // The Version Manager shares the update success-token format
+                // with MacPilotUpdater, so the record type comes from here.
+                "MacPilotUpdaterSupport",
                 .product(name: "MacPilotRemoteProtocol", package: "MacPilotRemoteProtocol"),
                 .product(name: "MacPilotRemoteTransport", package: "MacPilotRemoteProtocol")
             ]
+        ),
+        // Minimal standalone recovery helper. Copied next to the downgrade
+        // snapshots before a version switch; it can restore the previous app
+        // bundle and its configuration even when the installed target predates
+        // the Version Manager.
+        .executableTarget(
+            name: "MacPilotRecovery",
+            dependencies: ["MacPilotUpdaterSupport"],
+            linkerSettings: [.linkedFramework("AppKit")]
         ),
         // Dock Groups 的 Helper：每个分组一个 App，复用同一个 binary。
         .executableTarget(
@@ -95,6 +107,7 @@ let package = Package(
                 "MacPilot",
                 "MacPilotPowerIPC",
                 "MacPilotDockGroupsCore",
+                "MacPilotUpdaterSupport",
                 .product(name: "MacPilotRemoteProtocol", package: "MacPilotRemoteProtocol")
             ]
         ),

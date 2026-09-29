@@ -2,6 +2,16 @@ import AppKit
 import CryptoKit
 import Foundation
 
+/// Why a release was selected for installation. The distinction is semantic,
+/// not cosmetic: automatic updates only ever move forward, while every manual
+/// intent may target any verified release, including historical ones.
+enum InstallationIntent: String, Codable, Equatable, Sendable {
+    case automatic
+    case manualUpgrade
+    case manualDowngrade
+    case channelSwitch
+}
+
 struct SoftwareRelease: Equatable {
     let version: SoftwareVersion
     let releaseNotes: String
@@ -114,6 +124,7 @@ enum SoftwareUpdateError: Error, Equatable {
     case digestMismatch
     case invalidApplication
     case versionMismatch
+    case systemTooOld
     case invalidSignature
     case wrongDeveloperTeam
     case identityMismatch
@@ -158,6 +169,7 @@ struct SoftwareUpdateFailure: Equatable {
         case release = "updateErrorRelease"
         case integrity = "updateErrorIntegrity"
         case verification = "updateErrorVerification"
+        case system = "updateErrorSystem"
         case location = "updateErrorLocation"
         case helper = "updateErrorHelper"
         case network = "updateErrorNetwork"
@@ -179,6 +191,9 @@ struct SoftwareUpdateFailure: Equatable {
             detail = nil
         case .digestMismatch:
             message = .integrity
+            detail = nil
+        case .systemTooOld:
+            message = .system
             detail = nil
         case .invalidApplication, .versionMismatch, .invalidSignature, .wrongDeveloperTeam, .identityMismatch, .gatekeeperRejected:
             message = .verification
@@ -242,6 +257,12 @@ final class SoftwareUpdater: ObservableObject {
 
     private let session: URLSession
     private let applicationURL: URL
+    /// Set by the Version Switch integration so update checks and installs
+    /// stand down while a version switch transaction owns the app.
+    var isVersionSwitchInProgress: () -> Bool = { false }
+    /// Pre-install transaction for manual version switches (freeze, snapshot,
+    /// channel change). Installed by the model; automatic updates run without.
+    var manualTransaction: ((SoftwareRelease, InstallationIntent, VerifiedUpdatePackage) async throws -> Void)?
 
     init(
         currentVersion: String = AppVersionInfo.current().version,
@@ -261,7 +282,7 @@ final class SoftwareUpdater: ObservableObject {
     }
 
     func checkForUpdates() async {
-        guard !state.isBusy else { return }
+        guard !state.isBusy, !isVersionSwitchInProgress() else { return }
         state = .checking
         let revision = channelRevision
         let requestedChannel = channel
@@ -275,30 +296,33 @@ final class SoftwareUpdater: ObservableObject {
         }
     }
 
-    func downloadAndInstall() async {
-        guard case .available(let release) = state else { return }
-        state = .downloading(release)
-        do {
-            let downloadURL = try await UpdateArchiveDownloader.download(
-                release: release,
-                preferredHost: UserDefaults.standard.string(forKey: "updateDownloadMirrorHost"),
-                didVerifySource: { source in
-                    if source.host != release.archiveURL.host {
-                        UserDefaults.standard.set(source.host, forKey: "updateDownloadMirrorHost")
-                    } else {
-                        UserDefaults.standard.removeObject(forKey: "updateDownloadMirrorHost")
-                    }
-                }
-            ) { request in
-                try await self.session.download(for: request)
+    /// The single install entry point. Automatic updates keep the strict
+    /// newer-only rule; manual intents accept any verified release other than
+    /// the running one and route the pre-install transaction (configuration
+    /// freeze, protection snapshot, channel switch) through `manualTransaction`.
+    func install(release: SoftwareRelease, intent: InstallationIntent) async {
+        guard !state.isBusy, !isVersionSwitchInProgress() else { return }
+        switch intent {
+        case .automatic:
+            // 自动更新永远只向前。Downgrades exist exclusively in the Version
+            // Manager, where the user explicitly picked a target release.
+            guard release.isNewer(than: currentVersion) else {
+                state = .upToDate
+                return
             }
-            defer { try? FileManager.default.removeItem(at: downloadURL) }
-            state = .installing(release)
-            let package = try await Task.detached(priority: .userInitiated) {
-                try UpdatePackageValidator.prepare(downloadURL: downloadURL, release: release)
-            }.value
-            try launchInstaller(for: package)
-            NSApp.terminate(nil)
+        case .manualUpgrade, .manualDowngrade, .channelSwitch:
+            guard release.version != SoftwareVersion(currentVersion) else { return }
+        }
+        do {
+            let package = try await downloadAndValidate(release)
+            guard let manualTransaction else {
+                try launchInstaller(for: package)
+                requestTerminateAfterInstall()
+                return
+            }
+            // Manual switches run the full transaction; on success the
+            // coordinator terminates the app after the updater takes over.
+            try await manualTransaction(release, intent, package)
         } catch {
             // The user-facing message groups several distinct checks; keep the
             // exact reason in the diagnostic log so a failed update stays
@@ -306,6 +330,40 @@ final class SoftwareUpdater: ObservableObject {
             DiagnosticLog.write("SoftwareUpdate", "Update failed: \(String(describing: error))")
             state = .failed(SoftwareUpdateFailure(error))
         }
+    }
+
+    func downloadAndInstall() async {
+        guard case .available(let release) = state else { return }
+        await install(release: release, intent: .automatic)
+    }
+
+    /// Downloads the release archive through the shared mirror chain and runs
+    /// the full package validation. Automatic updates and version switches
+    /// converge here: exactly one downloader, exactly one validator.
+    func downloadAndValidate(
+        _ release: SoftwareRelease,
+        isCancelled: @escaping () -> Bool = { false }
+    ) async throws -> VerifiedUpdatePackage {
+        state = .downloading(release)
+        let downloadURL = try await UpdateArchiveDownloader.download(
+            release: release,
+            preferredHost: UserDefaults.standard.string(forKey: "updateDownloadMirrorHost"),
+            shouldContinue: isCancelled,
+            didVerifySource: { source in
+                if source.host != release.archiveURL.host {
+                    UserDefaults.standard.set(source.host, forKey: "updateDownloadMirrorHost")
+                } else {
+                    UserDefaults.standard.removeObject(forKey: "updateDownloadMirrorHost")
+                }
+            }
+        ) { request in
+            try await self.session.download(for: request)
+        }
+        defer { try? FileManager.default.removeItem(at: downloadURL) }
+        state = .installing(release)
+        return try await Task.detached(priority: .userInitiated) {
+            try UpdatePackageValidator.prepare(downloadURL: downloadURL, release: release)
+        }.value
     }
 
     private func fetchLatestRelease(channel: AppChannel) async throws -> SoftwareRelease? {
@@ -355,7 +413,10 @@ final class SoftwareUpdater: ObservableObject {
         return try SoftwareRelease.decodeGitHubAssetsHTML(assetsData, tagName: tagName)
     }
 
-    private func launchInstaller(for package: VerifiedUpdatePackage) throws {
+    /// Launches MacPilotUpdater for an already validated package. When
+    /// `successTokenID` is set, the updater keeps the previous bundle as a
+    /// rollback copy until the relaunched app confirms it runs stably.
+    func launchInstaller(for package: VerifiedUpdatePackage, successTokenID: UUID? = nil) throws {
         guard !Bundle.main.bundleURL.path.contains("/AppTranslocation/") else {
             throw SoftwareUpdateError.installationUnavailable
         }
@@ -388,6 +449,9 @@ final class SoftwareUpdater: ObservableObject {
             helperDirectory.path,
             logURL.path
         ]
+        if let successTokenID {
+            process.arguments!.append(VersionManagerPaths.successTokenURL(id: successTokenID).path)
+        }
         do {
             try process.run()
         } catch {
@@ -398,6 +462,10 @@ final class SoftwareUpdater: ObservableObject {
             try? FileManager.default.removeItem(at: package.workingDirectory)
             throw error
         }
+    }
+
+    func requestTerminateAfterInstall() {
+        NSApp.terminate(nil)
     }
 }
 
@@ -426,12 +494,14 @@ enum UpdateArchiveDownloader {
     static func download(
         release: SoftwareRelease,
         preferredHost: String? = nil,
+        shouldContinue: () -> Bool = { true },
         isolation: isolated (any Actor)? = #isolation,
         didVerifySource: (URL) -> Void = { _ in },
         fetch: (URLRequest) async throws -> (URL, URLResponse)
     ) async throws -> URL {
         var lastError: any Error = SoftwareUpdateError.invalidResponse
         for source in sources(for: release.archiveURL, preferredHost: preferredHost) {
+            guard shouldContinue() else { throw CancellationError() }
             try Task.checkCancellation()
             var request = URLRequest(url: source)
             // Bound a stalled source so an unreachable mirror cannot prevent
@@ -442,6 +512,10 @@ enum UpdateArchiveDownloader {
                 let (file, response) = try await fetch(request)
                 do {
                     try Task.checkCancellation()
+                    guard shouldContinue() else {
+                        try? FileManager.default.removeItem(at: file)
+                        throw CancellationError()
+                    }
                     guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                         throw SoftwareUpdateError.invalidResponse
                     }
@@ -516,6 +590,12 @@ enum UpdatePackageValidator {
             let version = AppVersionInfo.current(bundle: bundle).version
             guard SoftwareVersion(version) == release.version else {
                 throw SoftwareUpdateError.versionMismatch
+            }
+            // A downgrade target may predate this Mac's system version; reject
+            // it before anything replaces the installed app.
+            if let minimumSystemVersion = bundle.object(forInfoDictionaryKey: "LSMinimumSystemVersion") as? String,
+               !Self.currentSystemSatisfies(minimumSystemVersion) {
+                throw SoftwareUpdateError.systemTooOld
             }
 
             try run("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", applicationURL.path])
@@ -599,6 +679,22 @@ enum UpdatePackageValidator {
     /// attribute is absent.
     private static func stripQuarantine(from applicationURL: URL) {
         _ = try? run("/usr/bin/xattr", arguments: ["-d", "com.apple.quarantine", applicationURL.path])
+    }
+
+    /// Whether this Mac satisfies an `LSMinimumSystemVersion` string such as
+    /// "14.0" or "15.4.1".
+    static func currentSystemSatisfies(_ minimumSystemVersion: String) -> Bool {
+        let parts = minimumSystemVersion
+            .split(separator: ".")
+            .compactMap { Int($0) }
+        guard !parts.isEmpty else { return true }
+        let current = ProcessInfo.processInfo.operatingSystemVersion
+        let required = (parts + [0, 0]).prefix(3).map { $0 }
+        let running = [current.majorVersion, current.minorVersion, current.patchVersion]
+        for (need, have) in zip(required, running) where need != have {
+            return have > need
+        }
+        return true
     }
 
     static func sha256(of url: URL) throws -> String {

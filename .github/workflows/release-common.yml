@@ -123,6 +123,12 @@ jobs:
               "${{ steps.version.outputs.bundle_identifier }}"
           done
 
+      - name: Generate the compatibility manifest
+        run: |
+          python3 Scripts/generate-compatibility-json.py \
+            "${{ steps.version.outputs.version }}" \
+            "MacPilot-${{ steps.version.outputs.version }}-compatibility.json"
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -136,4 +142,5 @@ jobs:
             --verify-tag --title "MacPilot ${{ github.ref_name }}" --generate-notes "${flags[@]}" \
             "${{ steps.version.outputs.archive_prefix }}-${{ steps.version.outputs.version }}-arm64-macos.zip#MacPilot for Apple Silicon" \
             "${{ steps.version.outputs.archive_prefix }}-${{ steps.version.outputs.version }}-x86_64-macos.zip#MacPilot for Intel" \
-            "MacPilot-${{ steps.version.outputs.version }}.dmg#MacPilot installer"
+            "MacPilot-${{ steps.version.outputs.version }}.dmg#MacPilot installer" \
+            "MacPilot-${{ steps.version.outputs.version }}-compatibility.json#Compatibility manifest"

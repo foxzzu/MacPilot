@@ -91,6 +91,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_EXECUTABLE_NAME"
 cp "$UPDATER_BIN" "$APP/Contents/MacOS/$UPDATER_EXECUTABLE_NAME"
 cp "$HELPER_BIN" "$APP/Contents/MacOS/MacPilotPowerHelper"
+# 独立恢复 Helper：版本切换前会被复制到 VersionManager/Recovery/，
+# 用于从"没有版本管理器的旧版本"恢复降级前的 App 与配置。
+RECOVERY_BIN="$BIN_DIR/MacPilotRecovery"
+cp "$RECOVERY_BIN" "$APP/Contents/MacOS/MacPilotRecovery"
+chmod 755 "$APP/Contents/MacOS/MacPilotRecovery"
 # Dock Groups helper: 与主程序同目录，DockHelperBundleBuilder 按这个相对路径查找。
 cp "$DOCK_HELPER_BIN" "$APP/Contents/MacOS/MacPilotDockHelper"
 chmod 755 "$APP/Contents/MacOS/MacPilotDockHelper"
@@ -221,6 +226,7 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
         codesign --force --entitlements "$REXT_ENTITLEMENTS" \
             --sign - "$REXT_APPEX"
         codesign --force --sign - "$APP/Contents/MacOS/$UPDATER_EXECUTABLE_NAME"
+        codesign --force --sign - "$APP/Contents/MacOS/MacPilotRecovery"
         codesign --force --identifier "$DOCK_HELPER_IDENTIFIER" --sign - \
             "$APP/Contents/MacOS/MacPilotDockHelper"
         codesign --force --sign - \
@@ -234,6 +240,8 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
             --sign "$SIGNING_IDENTITY" "$REXT_APPEX"
         codesign --force --options runtime --sign "$SIGNING_IDENTITY" \
             "$APP/Contents/MacOS/$UPDATER_EXECUTABLE_NAME"
+        codesign --force --options runtime --sign "$SIGNING_IDENTITY" \
+            "$APP/Contents/MacOS/MacPilotRecovery"
         codesign --force --options runtime --identifier "$DOCK_HELPER_IDENTIFIER" \
             --sign "$SIGNING_IDENTITY" "$APP/Contents/MacOS/MacPilotDockHelper"
         codesign --force --options runtime --sign "$SIGNING_IDENTITY" \

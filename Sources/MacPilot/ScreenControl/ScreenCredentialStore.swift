@@ -9,7 +9,7 @@ import Foundation
 @MainActor
 final class ScreenCredentialStore {
     /// Human readable Keychain item label.
-    static let itemLabel = "MacPilot Unlock Password"
+    nonisolated static let itemLabel = "MacPilot Unlock Password"
 
     private let secretStore: SecretStore
     private var hasPasswordCache: Bool?

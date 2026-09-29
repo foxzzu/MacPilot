@@ -29,6 +29,18 @@ final class ConfigStore {
     private var pendingData: Data?
     private var pendingTask: Task<Void, Never>?
     var onError: ((Error) -> Void)?
+    /// True while a version switch transaction owns the configuration surface.
+    /// New writes are refused so a protection snapshot can never capture files
+    /// belonging to two different moments; anything already pending is flushed
+    /// by `finish()` before the snapshot starts.
+    var isVersionSwitching = false {
+        didSet {
+            if isVersionSwitching {
+                pendingTask?.cancel()
+                pendingTask = nil
+            }
+        }
+    }
 
     init(url: URL) {
         self.url = url
@@ -39,9 +51,21 @@ final class ConfigStore {
 
     var isDirty: Bool { pendingData != nil }
 
+    /// The configuration files a protection snapshot must capture, exactly as
+    /// they live on disk (never a merged re-encoding).
+    nonisolated static var snapshotFileNames: [String] {
+        ["config.json", "features.json", "clipboard.json", "shortcuts.json", "window.json", "config-legacy.json"]
+    }
+
+    var snapshotFileURLs: [URL] {
+        Self.snapshotFileNames.map { url.deletingLastPathComponent().appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     func load() -> Data? { Self.loadMergedData(at: url) }
 
     func markDirty(_ data: Data) {
+        guard !isVersionSwitching else { return }
         if pendingData == data || (pendingData == nil && lastQueuedData == data && !requiresMigration) { return }
         pendingData = data
         pendingTask?.cancel()

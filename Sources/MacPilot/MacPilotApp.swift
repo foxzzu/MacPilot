@@ -643,7 +643,7 @@ enum AppText {
         "preparingUpdate": "正在验证并准备安装…", "updateFailed": "更新失败：%@", "currentVersion": "当前版本：%@",
         "releaseNotes": "发布说明", "updateWillRestart": "安装后 MacPilot 将自动重新启动。",
         "updateErrorRelease": "GitHub Release 信息或 macOS 安装包无效。", "updateErrorIntegrity": "下载文件的 SHA-256 校验失败。",
-        "updateErrorVerification": "更新包未通过版本、开发者签名或 Gatekeeper 验证。",
+        "updateErrorVerification": "更新包未通过版本、开发者签名或 Gatekeeper 验证。", "updateErrorSystem": "目标版本需要更新的 macOS 系统，无法在此 Mac 上安装。",
         "updateErrorLocation": "无法从当前位置自动更新。请先将 MacPilot 移到可写的“应用程序”文件夹。",
         "updateErrorHelper": "当前 MacPilot 安装中缺少更新 helper。", "updateErrorNetwork": "网络请求失败：%@",
         "updateErrorCommand": "准备更新失败：%@",
@@ -823,6 +823,131 @@ enum AppText {
         "clipboardPreviewFileCount": "%d 个文件",
         "clipboardPreviewTruncated": "仅预览前 %d 个字符",
         "clipboardPreviewEmpty": "没有可预览的内容"
+    ]
+
+    // 版本管理（Version Manager）。单独成表，避免继续撑大历史主字典。
+    private static let versionManagerChinese: [String: String] = [
+        "versionManager": "版本管理",
+        "versionManagerOpen": "版本管理…",
+        "versionManagerSubtitle": "查看历史版本，可升级、降级或切换正式版/开发版。",
+        "versionManagerCurrentInstall": "当前安装",
+        "versionManagerLatestStable": "最新正式版",
+        "versionManagerLatestBeta": "最新开发版",
+        "versionManagerFilterAll": "全部",
+        "versionManagerSearch": "搜索版本",
+        "versionManagerBadgeCurrent": "当前版本",
+        "versionManagerBadgeLatestStable": "最新正式版",
+        "versionManagerBadgeLatestBeta": "最新开发版",
+        "versionManagerBadgeHistory": "历史版本",
+        "versionManagerCompatibilityUnknown": "配置兼容性未知",
+        "versionManagerCompatibilityIncompatible": "旧版本可能无法读取当前配置",
+        "versionManagerUpgradeTo": "升级到 %@",
+        "versionManagerDowngradeTo": "降级到 %@",
+        "versionManagerInstallStable": "安装正式版 %@",
+        "versionManagerInstallBeta": "安装开发版 %@",
+        "versionManagerLoadFailed": "暂时无法加载版本列表",
+        "versionManagerRetry": "重试",
+        "versionManagerRefresh": "刷新",
+        "versionManagerLoading": "正在加载版本列表…",
+        "versionManagerEmpty": "没有可安装的历史版本。",
+        "versionManagerProtection": "降级保护",
+        "versionManagerActiveProtection": "当前保护",
+        "versionManagerRestore": "恢复",
+        "versionManagerDelete": "删除",
+        "versionManagerStatusCompleted": "已完成",
+        "versionManagerStatusRestored": "已恢复",
+        "versionManagerStatusCorrupted": "已损坏",
+        "versionManagerStatusReady": "可用",
+        "versionManagerSnapshotDeleteFailed": "无法删除快照：%@",
+        "versionManagerConfirmDowngradeTitle": "降级 MacPilot",
+        "versionManagerConfirmInstallTitle": "安装 %@",
+        "versionManagerProtectTitle": "安装前将自动保护：",
+        "versionManagerProtectSettings": "MacPilot 设置与功能配置",
+        "versionManagerProtectShortcuts": "快捷键",
+        "versionManagerProtectDockGroups": "Dock Groups（含自定义图标）",
+        "versionManagerProtectRightClick": "右键菜单数据库",
+        "versionManagerProtectPreferences": "系统偏好（UserDefaults）",
+        "versionManagerProtectRemotePairing": "iPhone 配对密钥",
+        "versionManagerProtectUnlockPassword": "Mac 解锁密码",
+        "versionManagerClipboardNote": "大型剪贴板历史内容不会复制。",
+        "versionManagerRestoreNote": "安装完成后将自动还原该快照的配置与密钥；当前状态会先另行备份。",
+        "versionManagerIncompatibleNote": "旧版本可能无法读取新版创建的配置。MacPilot 会在安装前创建独立恢复快照；即使旧版修改或覆盖配置，原配置仍可恢复。",
+        "versionManagerConfirmProceed": "创建保护快照并安装",
+        "versionManagerConfirmProceedDowngrade": "创建保护快照并降级",
+        "versionManagerPhaseDownloading": "正在下载目标版本…",
+        "versionManagerPhaseVerifying": "正在验证安装包…",
+        "versionManagerPhasePreparing": "正在准备配置…",
+        "versionManagerPhaseSnapshotting": "正在创建保护快照…",
+        "versionManagerPhaseReady": "即将安装…",
+        "versionManagerPhaseReplacing": "正在替换应用…",
+        "versionManagerPhaseAwaiting": "等待重新启动…",
+        "versionManagerSwitchFailed": "版本切换失败：%@(详细原因见诊断日志)",
+        "versionManagerRestoreSourceMissing": "未找到 %@ 的可安装版本，无法自动恢复该快照。请先更新到最新版本。",
+        "versionManagerRestoreUnavailable": "目标版本不支持自动恢复配置，将以普通方式安装（快照仍会保留）。",
+        "versionManagerChannelStableToBeta": "正式版 → 开发版",
+        "versionManagerChannelBetaToStable": "开发版 → 正式版"
+    ]
+
+    private static let versionManagerEnglish: [String: String] = [
+        "versionManager": "Version Manager",
+        "versionManagerOpen": "Version Manager…",
+        "versionManagerSubtitle": "Browse past releases; upgrade, downgrade, or move between Stable and Beta.",
+        "versionManagerCurrentInstall": "Installed",
+        "versionManagerLatestStable": "Latest Stable",
+        "versionManagerLatestBeta": "Latest Beta",
+        "versionManagerFilterAll": "All",
+        "versionManagerSearch": "Search versions",
+        "versionManagerBadgeCurrent": "Current version",
+        "versionManagerBadgeLatestStable": "Latest Stable",
+        "versionManagerBadgeLatestBeta": "Latest Beta",
+        "versionManagerBadgeHistory": "Historical release",
+        "versionManagerCompatibilityUnknown": "Configuration compatibility unknown",
+        "versionManagerCompatibilityIncompatible": "This older release may not read the current configuration",
+        "versionManagerUpgradeTo": "Upgrade to %@",
+        "versionManagerDowngradeTo": "Downgrade to %@",
+        "versionManagerInstallStable": "Install Stable %@",
+        "versionManagerInstallBeta": "Install Beta %@",
+        "versionManagerLoadFailed": "The version list could not be loaded",
+        "versionManagerRetry": "Retry",
+        "versionManagerRefresh": "Refresh",
+        "versionManagerLoading": "Loading releases…",
+        "versionManagerEmpty": "No installable historical releases.",
+        "versionManagerProtection": "Downgrade protection",
+        "versionManagerActiveProtection": "Active protection",
+        "versionManagerRestore": "Restore",
+        "versionManagerDelete": "Delete",
+        "versionManagerStatusCompleted": "Completed",
+        "versionManagerStatusRestored": "Restored",
+        "versionManagerStatusCorrupted": "Corrupted",
+        "versionManagerStatusReady": "Available",
+        "versionManagerSnapshotDeleteFailed": "Couldn't delete the snapshot: %@",
+        "versionManagerConfirmDowngradeTitle": "Downgrade MacPilot",
+        "versionManagerConfirmInstallTitle": "Install %@",
+        "versionManagerProtectTitle": "The following will be protected before installing:",
+        "versionManagerProtectSettings": "MacPilot settings and feature configuration",
+        "versionManagerProtectShortcuts": "Keyboard shortcuts",
+        "versionManagerProtectDockGroups": "Dock Groups (including custom icons)",
+        "versionManagerProtectRightClick": "Right-click database",
+        "versionManagerProtectPreferences": "System preferences (UserDefaults)",
+        "versionManagerProtectRemotePairing": "iPhone pairing keys",
+        "versionManagerProtectUnlockPassword": "Mac unlock password",
+        "versionManagerClipboardNote": "Large clipboard history files are not copied.",
+        "versionManagerRestoreNote": "That snapshot's configuration and keys will be restored after the install; the current state is backed up separately first.",
+        "versionManagerIncompatibleNote": "This older release may not read configurations written by newer versions. MacPilot creates an independent recovery snapshot before installing; even if the old version modifies or overwrites the configuration, the original stays recoverable.",
+        "versionManagerConfirmProceed": "Create Protection Snapshot and Install",
+        "versionManagerConfirmProceedDowngrade": "Create Protection Snapshot and Downgrade",
+        "versionManagerPhaseDownloading": "Downloading the target version…",
+        "versionManagerPhaseVerifying": "Verifying the package…",
+        "versionManagerPhasePreparing": "Preparing configuration…",
+        "versionManagerPhaseSnapshotting": "Creating the protection snapshot…",
+        "versionManagerPhaseReady": "Ready to install…",
+        "versionManagerPhaseReplacing": "Replacing the app…",
+        "versionManagerPhaseAwaiting": "Waiting for relaunch…",
+        "versionManagerSwitchFailed": "Version switch failed: %@ (details in the diagnostic log)",
+        "versionManagerRestoreSourceMissing": "No installable release for %@ was found, so this snapshot cannot be restored automatically. Update to the latest version first.",
+        "versionManagerRestoreUnavailable": "The target release cannot apply a configuration restore automatically; installing normally (the snapshot is kept).",
+        "versionManagerChannelStableToBeta": "Stable → Beta",
+        "versionManagerChannelBetaToStable": "Beta → Stable"
     ]
 
     static func value(_ key: String, language: AppLanguage, _ arguments: CVarArg...) -> String {
@@ -1318,7 +1443,8 @@ enum AppText {
             cpuMonitorChinese,
             screenCaptureFeedbackChinese,
             dockGroupsChinese,
-            localPortsChinese
+            localPortsChinese,
+            versionManagerChinese
         ]
     }
 
@@ -1330,7 +1456,8 @@ enum AppText {
             cpuMonitorEnglish,
             screenCaptureFeedbackEnglish,
             dockGroupsEnglish,
-            localPortsEnglish
+            localPortsEnglish,
+            versionManagerEnglish
         ]
     }
 
@@ -1583,7 +1710,7 @@ enum AppText {
             "preparingUpdate": "Verifying and preparing the update…", "updateFailed": "Update failed: %@", "currentVersion": "Current version: %@",
             "releaseNotes": "Release Notes", "updateWillRestart": "MacPilot will restart automatically after installation.",
             "updateErrorRelease": "The GitHub release or macOS archive is invalid.", "updateErrorIntegrity": "The downloaded file failed its SHA-256 integrity check.",
-            "updateErrorVerification": "The update failed its version, developer signature, or Gatekeeper verification.",
+            "updateErrorVerification": "The update failed its version, developer signature, or Gatekeeper verification.", "updateErrorSystem": "The target release requires a newer macOS version and cannot be installed on this Mac.",
             "updateErrorLocation": "MacPilot cannot update itself from this location. Move it to a writable Applications folder first.",
             "updateErrorHelper": "The updater helper is missing from this MacPilot installation.", "updateErrorNetwork": "Network request failed: %@",
             "updateErrorCommand": "Couldn’t prepare the update: %@",
@@ -1832,7 +1959,7 @@ final class MacPilotModel: ObservableObject {
         }
 
         init(enabledFeatures: Set<MainSection>, rules: [QuitRule], isEnforcing: Bool, language: AppLanguage, launchRules: [LaunchRule], isLaunchSchedulingEnabled: Bool, launchesAtLogin: Bool, lastScheduledBootSession: String?, automaticUpdateChecks: Bool, updateChannel: AppChannel = .stable, bleUnlock: BLEUnlockSettings, fileCompression: FolderCompressionSettings, screenCapture: ScreenCaptureSettings, screenRecording: ScreenRecordingSettings, pictureInPicture: PictureInPictureSettings, inputSources: InputSourceSettings, windowSwitcher: WindowSwitcherSettings, smoothScrolling: SmoothScrollSettings, clipboard: ClipboardSettings, awake: AwakeSettings, awakeTriggers: [AwakeTrigger], awakeProfiles: [AwakeSessionProfile], remoteControl: RemoteControlSettings, dockGroups: DockGroupsSettings) {
-            version = 26
+            version = ConfigurationSchema.currentVersion
             self.enabledFeatures = enabledFeatures.map(\.rawValue).sorted()
             self.rules = rules
             self.isEnforcing = isEnforcing
@@ -1984,6 +2111,12 @@ final class MacPilotModel: ObservableObject {
     @Published var language: AppLanguage = .system { didSet { screenCapture.language = language; screenRecording.language = language; windowSwitcher.language = language; clipboard.language = language; saveIfReady() } }
     let ble = BLEUnlockModel()
     let updater = SoftwareUpdater()
+    /// True while a version switch transaction owns the app: the settings UI
+    /// freezes, automatic update checks stand down, and configuration writes
+    /// are blocked so the protection snapshot stays internally consistent.
+    @Published private(set) var isVersionSwitching = false
+    /// 版本管理：历史 Release、快照与版本切换入口。惰性构建以避免初始化竞争。
+    lazy var versionManager = makeVersionManager()
     let fileCompression = FolderCompressionModel()
     let screenCapture = ScreenCaptureModel()
     let screenRecording = ScreenRecordingModel()
@@ -2095,6 +2228,10 @@ final class MacPilotModel: ObservableObject {
     private let configurationStore: ConfigStore
 
     init() {
+        // Resolve whatever a previous version switch left behind — pending
+        // configuration restores and the updater's rollback bookkeeping —
+        // before anything reads or writes configuration.
+        VersionSwitchStartup.run()
         // A previous session may have died while holding a blank screen; replay
         // its saved backlight levels before anything else touches a display.
         DisplayBlankRecovery.recover(store: .standard)
@@ -2112,6 +2249,7 @@ final class MacPilotModel: ObservableObject {
             guard let self else { return }
             self.showAlert(self.t("configSaveError", error.localizedDescription))
         }
+        updater.isVersionSwitchInProgress = { [weak self] in self?.isVersionSwitching ?? false }
         isLoading = true
         load()
         updater.setChannel(updateChannel)
@@ -3136,8 +3274,83 @@ final class MacPilotModel: ObservableObject {
     }
 
     private func saveIfReady() {
-        guard !isLoading else { return }
+        guard !isLoading, !isVersionSwitching else { return }
         save()
+    }
+
+    // MARK: - Version switching (Version Manager)
+
+    var currentVersionForUpdate: String { AppVersionInfo.current().version }
+
+    private func makeVersionManager() -> VersionManager {
+        let rootDirectory = VersionManagerPaths.rootDirectory
+        let snapshotManager = ConfigurationSnapshotManager(
+            rootDirectory: rootDirectory,
+            configDirectory: VersionManagerPaths.configurationDirectory
+        )
+        let coordinator = VersionSwitchCoordinator(
+            updater: updater,
+            snapshotManager: snapshotManager,
+            transactionStore: VersionSwitchTransactionStore(rootDirectory: rootDirectory),
+            pendingRestoreStore: PendingConfigurationRestoreStore(rootDirectory: rootDirectory),
+            recovery: AppRecoveryManager(rootDirectory: rootDirectory),
+            currentVersion: { [weak self] in self?.currentVersionForUpdate ?? AppVersionInfo.current().version },
+            currentChannel: { [weak self] in self?.updateChannel ?? .stable },
+            remoteClientIDs: { [weak self] in
+                self?.remoteDeviceStore.settings.pairedDevices.map(\.id) ?? []
+            },
+            mergedConfiguration: { [weak self] in self?.configurationStore.load() },
+            flushConfiguration: { [weak self] in
+                guard let self else { throw VersionSwitchError.configurationFlushFailed }
+                try self.flushConfigurationForVersionSwitch()
+            },
+            applyChannelChange: { [weak self] channel in self?.applyVersionSwitchChannel(channel) },
+            beginSwitching: { [weak self] in self?.beginVersionSwitch() },
+            endSwitching: { [weak self] in
+                self?.isVersionSwitching = false
+                self?.configurationStore.isVersionSwitching = false
+            },
+            applicationURL: { [weak self] in self?.applicationBundleURL ?? Bundle.main.bundleURL }
+        )
+        updater.manualTransaction = { [weak self] release, intent, package in
+            guard let self else { throw VersionSwitchError.updaterLaunchFailed("model released") }
+            try await self.versionManager.coordinator.runTransaction(for: release, intent: intent, package: package)
+        }
+        return VersionManager(
+            model: self,
+            catalog: ReleaseCatalogService(currentVersion: currentVersionForUpdate),
+            coordinator: coordinator,
+            snapshotManager: snapshotManager
+        )
+    }
+
+    /// The bundle this process considers itself installed in; tests can point
+    /// the version manager elsewhere through the coordinator instead.
+    private var applicationBundleURL: URL { Bundle.main.bundleURL }
+
+    func beginVersionSwitch() {
+        isVersionSwitching = true
+        configurationStore.isVersionSwitching = true
+    }
+
+    /// Synchronous flush for the version switch transaction. Called after the
+    /// freeze is in place: whatever was still debounced lands on disk now, and
+    /// a store that could not reach a clean state refuses the transaction.
+    func flushConfigurationForVersionSwitch() throws {
+        configurationStore.finish()
+        guard !configurationStore.isDirty else {
+            throw VersionSwitchError.configurationFlushFailed
+        }
+    }
+
+    /// Persists the channel that follows the explicitly chosen release. The
+    /// snapshot already protected the previous value, so this one deliberate
+    /// write bypasses the freeze and lands before the updater starts.
+    func applyVersionSwitchChannel(_ channel: AppChannel) {
+        updateChannel = channel
+        configurationStore.isVersionSwitching = false
+        save()
+        configurationStore.isVersionSwitching = true
     }
 
     private func enforcingChanged() {
@@ -5570,6 +5783,7 @@ private struct SoftwareUpdateSettingsView: View {
     @ObservedObject var updater: SoftwareUpdater
     let language: AppLanguage
     @State private var confirmsBeta = false
+    @State private var showsVersionManager = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -5599,6 +5813,19 @@ private struct SoftwareUpdateSettingsView: View {
             Text(t("automaticUpdateChecksHint"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            HStack {
+                checkButton
+                Button(t("versionManagerOpen")) {
+                    showsVersionManager = true
+                }
+                .disabled(model.isVersionSwitching)
+            }
+            if model.isVersionSwitching {
+                Text(t("versionManagerPhaseReplacing"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             switch updater.state {
             case .idle:
@@ -5638,6 +5865,9 @@ private struct SoftwareUpdateSettingsView: View {
             Button(t("switchChannel")) { model.updateChannel = .beta }
         } message: {
             Text(t("switchBetaBody"))
+        }
+        .sheet(isPresented: $showsVersionManager) {
+            VersionManagerSheet(versionManager: model.versionManager)
         }
     }
 

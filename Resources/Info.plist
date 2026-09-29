@@ -25,6 +25,12 @@
 	<string>1.0.0</string>
 	<key>MacPilotUpdateChannel</key>
 	<string>stable</string>
+	<key>MacPilotConfigSchemaVersion</key>
+	<integer>26</integer>
+	<key>MacPilotVersionManagerProtocolVersion</key>
+	<integer>1</integer>
+	<key>MacPilotDataCompatibilityVersion</key>
+	<integer>20</integer>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFBundleURLTypes</key>

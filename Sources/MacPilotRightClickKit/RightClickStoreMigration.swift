@@ -92,43 +92,10 @@ enum RightClickStoreMigration {
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         let temporary = destination.deletingLastPathComponent().appendingPathComponent(".migration-\(UUID().uuidString).sqlite")
         defer { try? FileManager.default.removeItem(at: temporary) }
-        try snapshot(source: source, destination: temporary)
         // The SQLite backup API includes committed WAL transactions. Never
         // copy just the main sqlite file and silently discard newer settings.
+        try SQLiteSnapshot.create(from: source, to: temporary)
         try FileManager.default.moveItem(at: temporary, to: destination)
         return true
-    }
-
-    private static func snapshot(source: URL, destination: URL) throws {
-        var input: OpaquePointer?
-        var output: OpaquePointer?
-        defer {
-            if let input { sqlite3_close(input) }
-            if let output { sqlite3_close(output) }
-        }
-        try check(sqlite3_open_v2(source.path, &input, SQLITE_OPEN_READONLY, nil))
-        try check(sqlite3_open_v2(destination.path, &output, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil))
-        sqlite3_busy_timeout(input, 1000)
-        sqlite3_busy_timeout(output, 1000)
-        guard let backup = sqlite3_backup_init(output, "main", input, "main") else {
-            throw NSError(domain: "MacPilot.StoreMigration.SQLite", code: Int(sqlite3_errcode(output)))
-        }
-        let step = sqlite3_backup_step(backup, -1)
-        let finish = sqlite3_backup_finish(backup)
-        guard step == SQLITE_DONE else { try check(step); return }
-        try check(finish)
-        var statement: OpaquePointer?
-        try check(sqlite3_prepare_v2(output, "PRAGMA integrity_check", -1, &statement, nil))
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_step(statement) == SQLITE_ROW,
-              let result = sqlite3_column_text(statement, 0), String(cString: result) == "ok" else {
-            throw NSError(domain: "MacPilot.StoreMigration.SQLite", code: Int(SQLITE_CORRUPT))
-        }
-    }
-
-    private static func check(_ result: Int32) throws {
-        guard result == SQLITE_OK else {
-            throw NSError(domain: "MacPilot.StoreMigration.SQLite", code: Int(result))
-        }
     }
 }

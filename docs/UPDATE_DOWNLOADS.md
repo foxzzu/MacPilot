@@ -22,7 +22,42 @@ GH-Proxy 地址规则：https://gh-proxy.com/docs/github-accelerator
 
 Stable 使用 GitHub `/releases/latest`，拒绝 draft、prerelease 及预发布版本标签。Beta 分页读取 `/releases`，只选 `prerelease=true`、`-beta.N` 且存在适配 CPU 的校验安装包的最高 SemVer。没有 Beta 时显示已是最新版本。目标版本小于或等于当前版本均不提示更新；Beta 切回 Stable 后须等更高的正式版，不自动降级。切换通道会清除旧结果，正在进行的旧查询不会覆盖新通道结果。Beta API 限流会报错，不回退到 Stable 网页。
 
-构建示例：
+**自动更新永远只向前；只有版本管理（用户明确选择目标版本）才允许降级。**
+
+## 版本管理（Version Manager）
+
+设置 → 软件更新 → 版本管理打开独立页面：
+
+- 列出全部可安装的 GitHub Release（分页读取，按 SemVer 倒序，5 分钟缓存，可手动刷新）。没有合法校验 ZIP 的 Release 不进入列表。
+- 任意组合均可安装：Stable → 新/旧 Stable、Stable → Beta、Beta → 新/旧 Beta、Beta → Stable，以及任意高/低版本之间。按钮措辞区分「升级到 / 降级到 / 安装正式版 / 安装开发版」。
+- 发布包附带 `MacPilot-<version>-compatibility.json`（配置 Schema、可读 Schema 下限、版本管理协议版本）。历史版本没有该文件时显示「配置兼容性未知」，不猜测；仍允许安装。
+- 安装包安全要求与自动更新完全一致：HTTPS、GitHub SHA-256 摘要、Bundle ID/可执行文件校验、版本匹配、目标系统 `LSMinimumSystemVersion` 检查、Developer ID、Team ID、designated requirement、Gatekeeper、CPU 架构。下载与校验只有一套实现（`UpdateArchiveDownloader` + `UpdatePackageValidator`），App 替换只有 `MacPilotUpdater` 一个实现。
+- 自动更新仍严格 newer-only（`SoftwareUpdater.install(release:intent:.automatic)`）；`checkForUpdates` 不受版本管理影响。
+
+### 版本切换事务与降级保护
+
+每次通过版本管理安装都是一个事务（`VersionManager/transactions/active.json` 记录阶段，崩溃后下次启动归档）：
+
+1. 下载并完整校验目标安装包（先验证包，再做快照；下载失败不产生任何备份）。
+2. 冻结配置写入（`ConfigStore.isVersionSwitching`），`finish()` 确认无脏数据。
+3. 创建降级保护快照到 `~/Library/Application Support/MacPilot/VersionManager/snapshots/<时间戳>_<源版本>_to_<目标版本>/`：
+   - `configuration/`：config.json、features.json、clipboard.json、shortcuts.json、window.json、config-legacy.json 原样保存；另有 `merged-config.json` 仅用于诊断。
+   - `dock-groups/`：groups.json 与自定义图标。
+   - `right-click/`：RightClick SQLite 经 Backup API（含 WAL 中已提交事务）+ `PRAGMA integrity_check`，副本归一为普通 journal 模式。
+   - `preferences.plist`：整个 UserDefaults persistent domain（恢复时排除镜像缓存等运行时 key）。
+   - Keychain 配对密钥与解锁密码复制为 Keychain 备份项（`com.misswell.macpilot.version-backup.<snapshotID>`），**绝不落盘**；manifest 只记录数量。
+   - 大型剪贴板历史内容不复制（manifest 中 `clipboardContentBackedUp=false`），版本切换也绝不触发剪贴板清理。
+   - 每个文件记录 SHA-256，快照完成后逐个重算验证；任何失败都禁止降级。
+4. 创建降级前 App 的本地恢复包 `VersionManager/recovery/MacPilot-<version>-recovery.zip`（含 SHA-256），并复制独立 `MacPilotRecovery` Helper——即使降到没有版本管理器的旧版本，也能从本机恢复原 App 与原配置。
+5. 快照验证通过后才切换 `updateChannel`（跟随目标版本；恢复配置时还原快照记录的原通道），写入 pending restore（可选），启动 `MacPilotUpdater` 替换并重启。
+6. `MacPilotUpdater` 收到 success token 参数时保留旧 App 作为回滚包；新版本正常启动后才删除（两阶段成功确认）。
+7. 「恢复降级前配置」= 切回快照来源版本：先对当前状态再做一次快照（Restore 前再 Snapshot），恢复请求在下一次启动、配置加载之前应用（staging + 校验 + 原子替换）。
+
+快照生命周期：`downgradeActive`（当前保护）不可自动清理、不可在 UI 删除；新降级会把旧保护降级为历史；历史快照最多保留 5 个。「恢复降级前配置」要求目标版本支持版本管理（compatibility manifest 中 `versionManagerProtocolVersion >= 1`），否则仅按普通方式安装并保留快照。
+
+自动更新不会重置任何 macOS 权限（TCC）；版本切换继续沿用相同 Bundle ID、签名身份与 FinderSync 注册逻辑。
+
+## 构建示例：
 
 ```sh
 MACPILOT_CHANNEL=stable MACPILOT_VERSION=1.6.0 ./Scripts/build-app.sh
