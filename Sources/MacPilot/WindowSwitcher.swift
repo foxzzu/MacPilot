@@ -661,47 +661,6 @@ private struct WindowSwitcherPendingSession {
     var startedAt = CFAbsoluteTimeGetCurrent()
 }
 
-enum WindowSwitcherFocusExecutionPolicy {
-    static func schedule(
-        targetProcessID: pid_t,
-        ownProcessID: pid_t,
-        operation: @escaping @Sendable () -> Void
-    ) -> Task<Void, Never> {
-        if targetProcessID == ownProcessID {
-            return Task { @MainActor in
-                operation()
-            }
-        }
-        // AX requests to another application can wait for that application's
-        // accessibility server. Never let that wait occupy the main run loop,
-        // which also carries keyboard and scroll event taps.
-        return Task.detached(priority: .userInitiated) {
-            operation()
-        }
-    }
-}
-
-enum WindowSwitcherApplicationActivationPolicy {
-    static func schedule(
-        targetProcessID: pid_t,
-        ownProcessID: pid_t,
-        operation: @escaping @Sendable () -> Void
-    ) -> Task<Void, Never> {
-        if targetProcessID == ownProcessID {
-            return Task { @MainActor in
-                operation()
-            }
-        }
-        // LaunchServices activation can synchronously wait for the target
-        // application's launch/activation transaction. Keep that wait away
-        // from the main run loop, which also delivers keyboard and scroll
-        // events.
-        return Task.detached(priority: .userInitiated) {
-            operation()
-        }
-    }
-}
-
 enum WindowSwitcherEventTapRouting {
     static func shouldInspect(type: CGEventType, keyCode: Int64) -> Bool {
         switch type {
@@ -712,31 +671,6 @@ enum WindowSwitcherEventTapRouting {
         default:
             return false
         }
-    }
-}
-
-private struct WindowSwitcherFocusRequest: @unchecked Sendable {
-    let axWindow: AXUIElement?
-    let isMinimized: Bool
-}
-
-private enum WindowSwitcherWindowFocus {
-    static func perform(_ request: WindowSwitcherFocusRequest) {
-        guard let axWindow = request.axWindow else { return }
-        // The caller keeps this on the main actor only for MacPilot's own
-        // windows. External targets are executed by the background branch in
-        // WindowSwitcherApplicationActivationPolicy.
-        AXUIElementSetMessagingTimeout(axWindow, 0.1)
-        if request.isMinimized {
-            _ = AXUIElementSetAttributeValue(
-                axWindow,
-                kAXMinimizedAttribute as CFString,
-                false as CFTypeRef
-            )
-        }
-        _ = AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-        _ = AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, true as CFTypeRef)
-        _ = AXUIElementSetAttributeValue(axWindow, kAXFocusedAttribute as CFString, true as CFTypeRef)
     }
 }
 
@@ -1457,21 +1391,17 @@ final class WindowSwitcherModel: ObservableObject, ManagedFeature, FeatureResour
         let targetProcessID = item.processID
         guard targetProcessID > 0 else { return }
         noteWindowActivation(item.id)
-        let request = WindowSwitcherFocusRequest(
-            axWindow: item.axWindow,
-            isMinimized: item.isMinimized
-        )
-        // Application activation and external AX work are both kept off the
-        // event-delivery path. MacPilot's own windows stay on the main actor
-        // because AX can re-enter AppKit.
-        focusTask = WindowSwitcherApplicationActivationPolicy.schedule(
-            targetProcessID: targetProcessID,
-            ownProcessID: ProcessInfo.processInfo.processIdentifier
-        ) {
-            guard let application = NSRunningApplication(processIdentifier: targetProcessID) else { return }
-            if application.isHidden { _ = application.unhide() }
-            _ = application.activate(options: [.activateAllWindows])
-            WindowSwitcherWindowFocus.perform(request)
+        // All foregrounding goes through WindowFocusService: activation,
+        // AX raise/focus, foreground verification and retries are one pipeline
+        // so a dropped activation never leaves the target half-focused.
+        focusTask = Task { @MainActor in
+            let verified = await WindowFocusService.focus(item)
+            guard !verified else { return }
+            DiagnosticLog.write(
+                "WindowSwitcher",
+                "Window focus did not verify: \(item.appName) (pid \(targetProcessID))",
+                level: .warning
+            )
         }
     }
 
