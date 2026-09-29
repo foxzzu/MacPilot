@@ -151,6 +151,7 @@ final class VersionSwitchCoordinator: ObservableObject {
         intent: InstallationIntent,
         package: VerifiedUpdatePackage
     ) async throws {
+        guard !isSwitching else { throw VersionSwitchError.alreadyRunning }
         beginSwitching()
         try await runSwitch(
             to: release,
