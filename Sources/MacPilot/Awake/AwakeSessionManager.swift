@@ -365,6 +365,10 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
     }
 
     func applyLoadedSettings(_ newSettings: AwakeSettings, activate: Bool = true) {
+        // 结束时间计算已统一为「使用计时器」：不再提供选择，旧配置里
+        // 残留的「睡眠期间暂停计时」在加载时归一，所有会话都按墙钟计时。
+        var newSettings = newSettings
+        newSettings.defaultPolicy.endCalculation = .timer
         settings = newSettings
         if activate {
             activateFromConfiguration()

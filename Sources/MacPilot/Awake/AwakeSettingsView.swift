@@ -131,15 +131,6 @@ struct AwakeSettingsView: View {
                 )
             }
 
-            Picker(model.t("awakeEndCalculation"), selection: endCalculationBinding) {
-                Text(model.t("awakeEndCalculationTimer")).tag(SessionEndCalculation.timer)
-                Text(model.t("awakeEndCalculationAwakeTime")).tag(SessionEndCalculation.pausesDuringSleep)
-            }
-
-            sectionLabel(model.t("awakeForceSleep"))
-            Toggle(model.t("awakeEndOnForcedSleep"), isOn: endOnForcedSleepBinding)
-                .toggleStyle(.switch)
-
             sectionLabel(model.t("awakeDisplaySection"))
             Toggle(model.t("awakeDisplaySleepAllowed"), isOn: displaySleepAllowedBinding)
                 .toggleStyle(.switch)
@@ -339,9 +330,6 @@ struct AwakeSettingsView: View {
         if configuration.lowBatteryProtectionEnabled {
             parts.append(model.t("awakeEndSessionBelowBattery", configuration.minimumBatteryLevel))
         }
-        if configuration.endCalculation == .pausesDuringSleep {
-            parts.append(model.t("awakeEndCalculationAwakeTime"))
-        }
         if configuration.blockScreenSaver {
             parts.append(model.t("awakeBlockScreenSaver"))
         }
@@ -452,24 +440,6 @@ struct AwakeSettingsView: View {
         )
     }
 
-    private var endCalculationBinding: Binding<SessionEndCalculation> {
-        Binding(
-            get: { awake.settings.defaultPolicy.endCalculation },
-            set: { value in
-                awake.updateSettings { $0.defaultPolicy.endCalculation = value }
-            }
-        )
-    }
-
-    private var endOnForcedSleepBinding: Binding<Bool> {
-        Binding(
-            get: { awake.settings.defaultPolicy.endOnForcedSleep },
-            set: { value in
-                awake.updateSettings { $0.defaultPolicy.endOnForcedSleep = value }
-            }
-        )
-    }
-
     private var allowSystemSleepWhenDisplayOffBinding: Binding<Bool> {
         Binding(
             get: { awake.settings.defaultPolicy.allowSystemSleepWhenDisplayOff },
@@ -571,6 +541,8 @@ struct AwakeSettingsView: View {
 }
 
 struct AwakeSessionProtectionDraft {
+    /// 第二步的选项每次都从固定默认值开始，不记住上次的选择。
+    var endOnForcedSleep = false
     var safetyPolicy = AwakeSafetyPolicy.standard
     var warnBeforeBatteryTermination = false
     var ignoreBatteryLevelOnExternalPower = true
@@ -607,6 +579,8 @@ private struct AwakeSessionProtectionSheet: View {
                             .foregroundStyle(.secondary)
                     }
 
+                    forceSleepSection
+                    Divider()
                     batteryProtectionSection
                     Divider()
                     powerAdapterSection
@@ -643,19 +617,14 @@ private struct AwakeSessionProtectionSheet: View {
             }
             .environmentObject(model)
         }
-        .onAppear {
-            // 从当前设置初始化：弹窗展示的就是已保存的选项，确认时原样写回，
-            // 未触碰的项不会因为重新打开弹窗而被重置。
-            draft = AwakeSessionProtectionDraft(
-                safetyPolicy: awake.settings.safetyPolicy,
-                warnBeforeBatteryTermination: awake.settings.defaultSession.warnBeforeBatteryTermination,
-                ignoreBatteryLevelOnExternalPower: awake.settings.defaultSession.ignoreBatteryLevelOnExternalPower,
-                restartOnPowerReconnect: awake.settings.defaultSession.restartOnPowerReconnect,
-                autoStartOnLaunch: awake.settings.defaultSession.autoStartOnLaunch,
-                autoStartOnWake: awake.settings.defaultSession.autoStartOnWake,
-                launchProfileEnabled: awake.settings.defaultSession.launchProfileEnabled,
-                launchProfileID: awake.settings.defaultSession.launchProfileID
-            )
+    }
+
+    /// 强制睡眠在第二步选择，每次打开都回到默认的关闭状态。
+    private var forceSleepSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(model.t("awakeForceSleep"))
+            Toggle(model.t("awakeEndOnForcedSleep"), isOn: endOnForcedSleepBinding)
+                .toggleStyle(.switch)
         }
     }
 
@@ -744,12 +713,20 @@ private struct AwakeSessionProtectionSheet: View {
     /// 确认前的草稿值覆盖保护选项——保存的就是屏幕上看到的这套配置。
     private func draftConfiguration() -> AwakeSessionProfileConfiguration {
         var configuration = AwakeSessionProfileConfiguration.capture(from: awake.settings)
+        configuration.endOnForcedSleep = draft.endOnForcedSleep
         configuration.lowBatteryProtectionEnabled = draft.safetyPolicy.lowBatteryProtectionEnabled
         configuration.minimumBatteryLevel = draft.safetyPolicy.minimumBatteryLevel
         configuration.warnBeforeBatteryTermination = draft.warnBeforeBatteryTermination
         configuration.ignoreBatteryLevelOnExternalPower = draft.ignoreBatteryLevelOnExternalPower
         configuration.restartOnPowerReconnect = draft.restartOnPowerReconnect
         return configuration
+    }
+
+    private var endOnForcedSleepBinding: Binding<Bool> {
+        Binding(
+            get: { draft.endOnForcedSleep },
+            set: { draft.endOnForcedSleep = $0 }
+        )
     }
 
     private var batteryProtectionBinding: Binding<Bool> {
@@ -826,6 +803,7 @@ private struct AwakeSessionProtectionSheet: View {
         }
 
         awake.updateSettings { settings in
+            settings.defaultPolicy.endOnForcedSleep = selected.endOnForcedSleep
             settings.safetyPolicy = selected.safetyPolicy
             settings.defaultSession.warnBeforeBatteryTermination = selected.warnBeforeBatteryTermination
             settings.defaultSession.ignoreBatteryLevelOnExternalPower = selected.ignoreBatteryLevelOnExternalPower
@@ -1080,11 +1058,6 @@ private struct AwakeProfileEditorSheet: View {
                                 .multilineTextAlignment(.trailing)
                                 .frame(width: 90)
                         }
-                    }
-
-                    Picker(model.t("awakeEndCalculation"), selection: $configuration.endCalculation) {
-                        Text(model.t("awakeEndCalculationTimer")).tag(SessionEndCalculation.timer)
-                        Text(model.t("awakeEndCalculationAwakeTime")).tag(SessionEndCalculation.pausesDuringSleep)
                     }
 
                     sectionLabel(model.t("awakeForceSleep"))

@@ -14,13 +14,13 @@ import Foundation
 /// 一次完整 Session 的业务配置快照。
 ///
 /// 覆盖「Session 配置」卡与「Session 保护」弹窗里的全部选项：时长、
-/// 结束时间计算、显示器、合盖运行、屏幕保护程序、电量保护与电源适配器。
+/// 显示器、合盖运行、屏幕保护程序、强制睡眠、电量保护与电源适配器。
+/// 结束时间计算已统一为「使用计时器」，不再是可配置项；旧数据里的
+/// `endCalculation` 键由 Codable 自动忽略。
 struct AwakeSessionProfileConfiguration: Codable, Equatable, Sendable {
     /// 分钟数；`0` 表示不限时（手动结束）。「直到指定时间」预设不进方案：
     /// 绝对日期保存后必然过期，捕获时按剩余时间折算成分钟。
     var durationMinutes: Int
-    /// 定时 Session 的倒计时如何对待系统睡眠。
-    var endCalculation: SessionEndCalculation
     var endOnForcedSleep: Bool
     var preventDisplaySleep: Bool
     var allowSystemSleepWhenDisplayOff: Bool
@@ -43,7 +43,6 @@ struct AwakeSessionProfileConfiguration: Codable, Equatable, Sendable {
         }
         return Self(
             durationMinutes: max(0, durationMinutes),
-            endCalculation: settings.defaultPolicy.endCalculation,
             endOnForcedSleep: settings.defaultPolicy.endOnForcedSleep,
             preventDisplaySleep: settings.defaultPolicy.preventDisplaySleep,
             allowSystemSleepWhenDisplayOff: settings.defaultPolicy.allowSystemSleepWhenDisplayOff,
@@ -63,13 +62,13 @@ struct AwakeSessionProfileConfiguration: Codable, Equatable, Sendable {
         durationMinutes > 0 ? .duration(TimeInterval(durationMinutes) * 60) : .manual
     }
 
-    /// 方案的 Session 策略。阻止系统休眠是保持唤醒的基线（与默认策略一致）。
+    /// 方案的 Session 策略。阻止系统休眠是保持唤醒的基线（与默认策略一致）；
+    /// 结束计算固定为「使用计时器」（`SessionPolicy` 默认值）。
     var policy: SessionPolicy {
         SessionPolicy(
             preventSystemSleep: true,
             preventDisplaySleep: preventDisplaySleep,
             preventClosedLidSleep: preventClosedLidSleep,
-            endCalculation: endCalculation,
             endOnForcedSleep: endOnForcedSleep,
             allowSystemSleepWhenDisplayOff: allowSystemSleepWhenDisplayOff,
             blockScreenSaver: blockScreenSaver,

@@ -278,11 +278,6 @@ struct AwakeTriggerEditorView: View {
                         Toggle(model.t("awakeEndOnForcedSleep"), isOn: policyBinding(\.endOnForcedSleep))
                             .toggleStyle(.switch)
 
-                        Picker(model.t("awakeEndCalculation"), selection: endCalculationBinding) {
-                            Text(model.t("awakeEndCalculationTimer")).tag(SessionEndCalculation.timer)
-                            Text(model.t("awakeEndCalculationAwakeTime")).tag(SessionEndCalculation.pausesDuringSleep)
-                        }
-
                         Toggle(model.t("awakeBlockScreenSaver"), isOn: policyBinding(\.blockScreenSaver))
                             .toggleStyle(.switch)
                         if draft.sessionPolicy.blockScreenSaver {
@@ -428,13 +423,6 @@ struct AwakeTriggerEditorView: View {
         Binding(
             get: { draft.sessionPolicy.preventClosedLidSleep },
             set: { draft.sessionPolicy.setPreventClosedLidSleep($0) }
-        )
-    }
-
-    private var endCalculationBinding: Binding<SessionEndCalculation> {
-        Binding(
-            get: { draft.sessionPolicy.endCalculation },
-            set: { draft.sessionPolicy.endCalculation = $0 }
         )
     }
 

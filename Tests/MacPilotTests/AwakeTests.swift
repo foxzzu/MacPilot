@@ -319,8 +319,8 @@ struct AwakeTests {
         #expect(AppText.value("awakeSessionProtectionTitle", language: .english) == "Step 2: Session Protection")
         #expect(AppText.value("awakeSessionProtectionConfirm", language: .simplifiedChinese) == "确认并开始 Session")
         #expect(AppText.value("awakeSessionProtectionConfirm", language: .english) == "Confirm and Start Session")
-        #expect(AppText.value("awakeEndCalculation", language: .simplifiedChinese) == "计算结束时间")
-        #expect(AppText.value("awakeEndCalculation", language: .english) == "End Time Calculation")
+        #expect(AppText.value("awakeForceSleep", language: .simplifiedChinese) == "强制睡眠")
+        #expect(AppText.value("awakeForceSleep", language: .english) == "Forced Sleep")
         #expect(AppText.value("awakeEndSessionBelowBattery", language: .simplifiedChinese, 15) == "当电量低于 15% 时结束会话")
         #expect(AppText.value("awakeEndSessionBelowBattery", language: .english, 15) == "End the session below 15% battery")
         #expect(AppText.value("awakePowerAdapterSection", language: .simplifiedChinese) == "电源适配器")
@@ -329,6 +329,7 @@ struct AwakeTests {
 
     @Test func sessionProtectionDraftStartsWithStandardDefaults() {
         var previousDraft = AwakeSessionProtectionDraft()
+        previousDraft.endOnForcedSleep = true
         previousDraft.safetyPolicy.lowBatteryProtectionEnabled = false
         previousDraft.safetyPolicy.minimumBatteryLevel = 35
         previousDraft.warnBeforeBatteryTermination = true
@@ -338,6 +339,7 @@ struct AwakeTests {
         previousDraft.autoStartOnWake = true
 
         let nextDraft = AwakeSessionProtectionDraft()
+        #expect(!nextDraft.endOnForcedSleep)
         #expect(nextDraft.safetyPolicy.lowBatteryProtectionEnabled)
         #expect(nextDraft.safetyPolicy.minimumBatteryLevel == 15)
         #expect(!nextDraft.warnBeforeBatteryTermination)
@@ -347,7 +349,7 @@ struct AwakeTests {
         #expect(!nextDraft.autoStartOnWake)
     }
 
-    @Test func sleepShiftsTimedSessionsOnlyWhenPausingDuringSleepIsConfigured() {
+    @Test func timedDefaultSessionsKeepCountingThroughSystemSleep() {
         var currentDate = Date(timeIntervalSince1970: 50_000)
         let manager = AwakeSessionManager(
             assertionController: TestAssertionController(),
@@ -358,30 +360,21 @@ struct AwakeTests {
 
         var settings = manager.settings
         settings.defaultSession.durationMinutes = 60
+        // 旧配置里可能残留「睡眠期间暂停计时」；加载时统一归一为计时器，
+        // 倒计时始终按墙钟时间走。
+        settings.defaultPolicy.endCalculation = .pausesDuringSleep
         manager.applyLoadedSettings(settings)
 
-        // With the plain timer the countdown keeps running while asleep.
-        _ = manager.startDefaultSession()
+        let sessionID = manager.startDefaultSession()
+        #expect(
+            manager.sessions.first { $0.id == sessionID }?.policy.endCalculation == .timer
+        )
+
         currentDate = currentDate.addingTimeInterval(30 * 60)
         manager.handleSystemSleep()
         currentDate = currentDate.addingTimeInterval(45 * 60)
         manager.handleSystemWake()
         #expect(manager.activeSessions.isEmpty)
-
-        // Pausing during sleep resumes the countdown after wake.
-        settings.defaultPolicy.endCalculation = .pausesDuringSleep
-        manager.applyLoadedSettings(settings)
-        let pausedID = manager.startDefaultSession()
-        let endBeforeSleep = manager.sessions.first(where: { $0.id == pausedID })?.expectedEndAt
-        manager.handleSystemSleep()
-        currentDate = currentDate.addingTimeInterval(45 * 60)
-        manager.handleSystemWake()
-
-        #expect(manager.activeSessions.contains { $0.id == pausedID })
-        #expect(
-            manager.sessions.first(where: { $0.id == pausedID })?.expectedEndAt
-                == endBeforeSleep.map { $0.addingTimeInterval(45 * 60) }
-        )
     }
 
     @Test func forcedSleepEndsOnlyTheSessionsOptedIn() {
@@ -744,7 +737,7 @@ struct AwakeTriggerTests {
             manager.shutdown()
         }
 
-        let policy = SessionPolicy(preventDisplaySleep: true, endCalculation: .pausesDuringSleep)
+        let policy = SessionPolicy(preventDisplaySleep: true)
         let trigger = AwakeTrigger(
             name: "Claude",
             conditions: [.processRunning(name: "claude")],
@@ -980,7 +973,6 @@ struct AwakeProfileTests {
     private var fullConfiguration: AwakeSessionProfileConfiguration {
         AwakeSessionProfileConfiguration(
             durationMinutes: 240,
-            endCalculation: .pausesDuringSleep,
             endOnForcedSleep: false,
             preventDisplaySleep: true,
             allowSystemSleepWhenDisplayOff: false,
@@ -1000,7 +992,6 @@ struct AwakeProfileTests {
         settings.defaultSession.durationMinutes = 240
         settings.defaultPolicy.preventClosedLidSleep = true
         settings.defaultPolicy.preventDisplaySleep = true
-        settings.defaultPolicy.endCalculation = .pausesDuringSleep
         settings.defaultPolicy.blockScreenSaver = true
         settings.defaultPolicy.screenSaverIdleMinutes = 60
         settings.safetyPolicy.lowBatteryProtectionEnabled = false
@@ -1010,7 +1001,6 @@ struct AwakeProfileTests {
         let configuration = AwakeSessionProfileConfiguration.capture(from: settings)
 
         #expect(configuration.durationMinutes == 240)
-        #expect(configuration.endCalculation == .pausesDuringSleep)
         #expect(configuration.preventClosedLidSleep)
         #expect(configuration.preventDisplaySleep)
         #expect(configuration.blockScreenSaver)
