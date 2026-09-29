@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Darwin
+import OSLog
 import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
@@ -1900,6 +1901,10 @@ final class MacPilotModel: ObservableObject {
     private static let closeWindowsLaunchGracePeriod: Duration = .seconds(10)
 
     struct StoredConfiguration: Codable {
+        private static let configurationIssueLogger = Logger(
+            subsystem: "com.misswell.macpilot", category: "Configuration"
+        )
+
         var version: Int
         /// Top-level feature switches introduced by the Home page. An array of
         /// raw values keeps the configuration tolerant of future sections.
@@ -1984,38 +1989,67 @@ final class MacPilotModel: ObservableObject {
             self.dockGroups = dockGroups
         }
 
+        /// Not encoded: sections that existed on disk but could not be decoded
+        /// this run. Load uses it to preserve a pristine copy of the raw data
+        /// before any save can overwrite it. Decode-only companion, like
+        /// `launchesAtLoginWasStored`.
+        var unreadableSections: [String] = []
+
         init(from decoder: Decoder) throws {
+            var degraded: [String] = []
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
             // Configurations written before the Home page represent an
             // explicit opt-in through their existing settings, so preserve
             // their visible/running feature set on the first launch.
-            enabledFeatures = try container.decodeIfPresent([String].self, forKey: .enabledFeatures)
-                ?? MainSection.featureSections.map(\.rawValue)
-            rules = try container.decodeIfPresent([QuitRule].self, forKey: .rules) ?? []
-            isEnforcing = try container.decodeIfPresent(Bool.self, forKey: .isEnforcing) ?? true
-            language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
-            launchRules = try container.decodeIfPresent([LaunchRule].self, forKey: .launchRules) ?? []
-            isLaunchSchedulingEnabled = try container.decodeIfPresent(Bool.self, forKey: .isLaunchSchedulingEnabled) ?? true
-            launchesAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchesAtLogin) ?? false
+            enabledFeatures = Self.section([String].self, forKey: .enabledFeatures, in: container, default: MainSection.featureSections.map(\.rawValue), degraded: &degraded)
+            rules = Self.section([QuitRule].self, forKey: .rules, in: container, default: [], degraded: &degraded)
+            isEnforcing = Self.section(Bool.self, forKey: .isEnforcing, in: container, default: true, degraded: &degraded)
+            language = Self.section(AppLanguage.self, forKey: .language, in: container, default: .system, degraded: &degraded)
+            launchRules = Self.section([LaunchRule].self, forKey: .launchRules, in: container, default: [], degraded: &degraded)
+            isLaunchSchedulingEnabled = Self.section(Bool.self, forKey: .isLaunchSchedulingEnabled, in: container, default: true, degraded: &degraded)
+            launchesAtLogin = Self.section(Bool.self, forKey: .launchesAtLogin, in: container, default: false, degraded: &degraded)
             launchesAtLoginWasStored = container.contains(.launchesAtLogin)
-            lastScheduledBootSession = try container.decodeIfPresent(String.self, forKey: .lastScheduledBootSession)
-            automaticUpdateChecks = try container.decodeIfPresent(Bool.self, forKey: .automaticUpdateChecks) ?? true
-            updateChannel = (try container.decodeIfPresent(String.self, forKey: .updateChannel)).flatMap(AppChannel.init(rawValue:)) ?? .stable
-            bleUnlock = try container.decodeIfPresent(BLEUnlockSettings.self, forKey: .bleUnlock) ?? BLEUnlockSettings()
-            fileCompression = try container.decodeIfPresent(FolderCompressionSettings.self, forKey: .fileCompression) ?? FolderCompressionSettings()
-            screenCapture = try container.decodeIfPresent(ScreenCaptureSettings.self, forKey: .screenCapture) ?? ScreenCaptureSettings()
-            screenRecording = try container.decodeIfPresent(ScreenRecordingSettings.self, forKey: .screenRecording) ?? ScreenRecordingSettings()
-            pictureInPicture = try container.decodeIfPresent(PictureInPictureSettings.self, forKey: .pictureInPicture) ?? PictureInPictureSettings()
-            inputSources = try container.decodeIfPresent(InputSourceSettings.self, forKey: .inputSources) ?? InputSourceSettings()
-            windowSwitcher = try container.decodeIfPresent(WindowSwitcherSettings.self, forKey: .windowSwitcher) ?? WindowSwitcherSettings()
-            smoothScrolling = try container.decodeIfPresent(SmoothScrollSettings.self, forKey: .smoothScrolling) ?? SmoothScrollSettings()
-            clipboard = try container.decodeIfPresent(ClipboardSettings.self, forKey: .clipboard) ?? ClipboardSettings()
-            awake = try container.decodeIfPresent(AwakeSettings.self, forKey: .awake) ?? .standard
-            awakeTriggers = try container.decodeIfPresent([AwakeTrigger].self, forKey: .awakeTriggers) ?? []
-            awakeProfiles = try container.decodeIfPresent([AwakeSessionProfile].self, forKey: .awakeProfiles) ?? []
-            remoteControl = try container.decodeIfPresent(RemoteControlSettings.self, forKey: .remoteControl) ?? RemoteControlSettings()
-            dockGroups = try container.decodeIfPresent(DockGroupsSettings.self, forKey: .dockGroups) ?? DockGroupsSettings()
+            lastScheduledBootSession = Self.section(String?.self, forKey: .lastScheduledBootSession, in: container, default: nil, degraded: &degraded)
+            automaticUpdateChecks = Self.section(Bool.self, forKey: .automaticUpdateChecks, in: container, default: true, degraded: &degraded)
+            let storedChannel = Self.section(String.self, forKey: .updateChannel, in: container, default: AppChannel.stable.rawValue, degraded: &degraded)
+            updateChannel = AppChannel(rawValue: storedChannel) ?? .stable
+            bleUnlock = Self.section(BLEUnlockSettings.self, forKey: .bleUnlock, in: container, default: BLEUnlockSettings(), degraded: &degraded)
+            fileCompression = Self.section(FolderCompressionSettings.self, forKey: .fileCompression, in: container, default: FolderCompressionSettings(), degraded: &degraded)
+            screenCapture = Self.section(ScreenCaptureSettings.self, forKey: .screenCapture, in: container, default: ScreenCaptureSettings(), degraded: &degraded)
+            screenRecording = Self.section(ScreenRecordingSettings.self, forKey: .screenRecording, in: container, default: ScreenRecordingSettings(), degraded: &degraded)
+            pictureInPicture = Self.section(PictureInPictureSettings.self, forKey: .pictureInPicture, in: container, default: PictureInPictureSettings(), degraded: &degraded)
+            inputSources = Self.section(InputSourceSettings.self, forKey: .inputSources, in: container, default: InputSourceSettings(), degraded: &degraded)
+            windowSwitcher = Self.section(WindowSwitcherSettings.self, forKey: .windowSwitcher, in: container, default: WindowSwitcherSettings(), degraded: &degraded)
+            smoothScrolling = Self.section(SmoothScrollSettings.self, forKey: .smoothScrolling, in: container, default: SmoothScrollSettings(), degraded: &degraded)
+            clipboard = Self.section(ClipboardSettings.self, forKey: .clipboard, in: container, default: ClipboardSettings(), degraded: &degraded)
+            awake = Self.section(AwakeSettings.self, forKey: .awake, in: container, default: .standard, degraded: &degraded)
+            awakeTriggers = Self.section([AwakeTrigger].self, forKey: .awakeTriggers, in: container, default: [], degraded: &degraded)
+            awakeProfiles = Self.section([AwakeSessionProfile].self, forKey: .awakeProfiles, in: container, default: [], degraded: &degraded)
+            remoteControl = Self.section(RemoteControlSettings.self, forKey: .remoteControl, in: container, default: RemoteControlSettings(), degraded: &degraded)
+            dockGroups = Self.section(DockGroupsSettings.self, forKey: .dockGroups, in: container, default: DockGroupsSettings(), degraded: &degraded)
+            unreadableSections = degraded
+        }
+
+        /// 任何一节配置读不出来时，只让这一节回到默认值，绝不让整份配置
+        /// 解码失败——否则一次降级或字段变动，所有功能的配置就会被默认值
+        /// 整体覆盖（v1.1.482-beta.5 → beta.4 降级清空配置的教训）。
+        /// 键缺失是正常演化，静默用默认值；键存在但形状对不上才记录日志，
+        /// 并把该节记入 `unreadableSections` 供加载层保留原始数据。
+        private static func section<T: Decodable>(
+            _ type: T.Type,
+            forKey key: CodingKeys,
+            in container: KeyedDecodingContainer<CodingKeys>,
+            default fallback: @autoclosure () -> T,
+            degraded: inout [String]
+        ) -> T {
+            guard container.contains(key) else { return fallback() }
+            guard let value = try? container.decode(type, forKey: key) else {
+                configurationIssueLogger.notice("Configuration section \(key.stringValue, privacy: .public) was unreadable; falling back to its defaults")
+                degraded.append(key.stringValue)
+                return fallback()
+            }
+            return value
         }
 
         // Written out for the same reason as `CodingKeys`: `launchesAtLoginWasStored`

@@ -973,6 +973,7 @@ struct AwakeProfileTests {
     private var fullConfiguration: AwakeSessionProfileConfiguration {
         AwakeSessionProfileConfiguration(
             durationMinutes: 240,
+            endCalculation: .timer,
             endOnForcedSleep: false,
             preventDisplaySleep: true,
             allowSystemSleepWhenDisplayOff: false,
@@ -1001,6 +1002,7 @@ struct AwakeProfileTests {
         let configuration = AwakeSessionProfileConfiguration.capture(from: settings)
 
         #expect(configuration.durationMinutes == 240)
+        #expect(configuration.endCalculation == .timer)
         #expect(configuration.preventClosedLidSleep)
         #expect(configuration.preventDisplaySleep)
         #expect(configuration.blockScreenSaver)
@@ -1046,6 +1048,39 @@ struct AwakeProfileTests {
         // 旧版 config.json 没有 awakeProfiles 键：解码后必须是空列表而不是失败。
         let decoded = try JSONDecoder().decode(MacPilotModel.StoredConfiguration.self, from: Data("{}".utf8))
         #expect(decoded.awakeProfiles.isEmpty)
+    }
+
+    @Test func profileConfigurationDecodesDataMissingTheRetiredEndCalculationKey() throws {
+        // beta.5 编码的方案没有 endCalculation 键；这些数据必须能解码回来，
+        // 而不是让整份配置作废。重新编码时必须带上该键，旧版本才读得回去。
+        let json = """
+        {"id": "00000000-0000-0000-0000-000000000001", "name": "默认开启方案",
+         "createdAt": 0, "configuration": {"durationMinutes": 240, "endOnForcedSleep": true}}
+        """
+        let profile = try JSONDecoder().decode(AwakeSessionProfile.self, from: Data(json.utf8))
+
+        #expect(profile.configuration.durationMinutes == 240)
+        #expect(profile.configuration.endCalculation == .timer)
+        #expect(profile.configuration.endOnForcedSleep)
+
+        let encoded = try JSONEncoder().encode(profile)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let storedConfiguration = try #require(object["configuration"] as? [String: Any])
+        #expect(storedConfiguration["endCalculation"] as? String == "timer")
+    }
+
+    @Test func oneUnreadableSectionFallsBackToDefaultsAndKeepsEveryOtherSection() throws {
+        // 一节配置的形状对不上时（这里模拟 beta.5 丢键、旧版解码失败的场景），
+        // 只有这一节回到默认值，其余节的用户数据必须原样保留。
+        let json = """
+        {"language": "english", "automaticUpdateChecks": false, "awakeProfiles": ["broken"]}
+        """
+        let decoded = try JSONDecoder().decode(MacPilotModel.StoredConfiguration.self, from: Data(json.utf8))
+
+        #expect(decoded.awakeProfiles.isEmpty)
+        #expect(decoded.unreadableSections == ["awakeProfiles"])
+        #expect(decoded.language == .english)
+        #expect(!decoded.automaticUpdateChecks)
     }
 
     @Test func launchingAProfileStartsASessionWithIdenticalParameters() {
