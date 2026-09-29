@@ -63,6 +63,8 @@ final class ReleaseCatalogService: ObservableObject {
     private let currentVersion: String
     private let architecture: AppArchitecture
     private let now: () -> Date
+    /// Injectable transport so tests stay deterministic without real network.
+    private let performRequest: (URLRequest) async throws -> (Data, URLResponse)
     private var cache: VersionCatalog?
     private var loadTask: Task<Void, Never>?
 
@@ -70,12 +72,16 @@ final class ReleaseCatalogService: ObservableObject {
         session: URLSession = .shared,
         currentVersion: String = AppVersionInfo.current().version,
         architecture: AppArchitecture = .current,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        performRequest: ((URLRequest) async throws -> (Data, URLResponse))? = nil
     ) {
         self.session = session
         self.currentVersion = currentVersion
         self.architecture = architecture
         self.now = now
+        self.performRequest = performRequest ?? { request in
+            try await session.data(for: request)
+        }
     }
 
     func load(forceRefresh: Bool = false) async {
@@ -118,7 +124,7 @@ final class ReleaseCatalogService: ObservableObject {
             request.timeoutInterval = 20
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.setValue("MacPilot/\(currentVersion)", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await performRequest(request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw SoftwareUpdateError.invalidResponse
             }

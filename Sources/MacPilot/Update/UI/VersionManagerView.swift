@@ -61,9 +61,23 @@ struct VersionManagerSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(t("versionManager")).font(.system(size: 30, weight: .bold))
-            Text(t("versionManagerSubtitle")).foregroundStyle(.secondary)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(t("versionManager")).font(.system(size: 30, weight: .bold))
+                Text(t("versionManagerSubtitle")).foregroundStyle(.secondary)
+            }
+            Spacer()
+            // Sheet 没有标题栏，必须提供显式的关闭入口（Esc 同效）。
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel(Text(t("cancel")))
         }
     }
 
