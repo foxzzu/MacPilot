@@ -207,7 +207,10 @@ struct VersionSwitchCoordinatorTests {
         }
         gate.open()
         _ = try? await firstTask.value
-        #expect(!world.coordinator.isSwitching)
+        // 成功的切换刻意保留全局锁直到应用重启（updater 接管后随即退出）；
+        // 失败路径的解锁由 downloadFailureLeavesConfigurationAndChannelUntouched 覆盖。
+        #expect(world.coordinator.isSwitching)
+        #expect(world.coordinator.phase == .awaitingRelaunch)
     }
 
     @Test func sameVersionSwitchIsRejected() async {

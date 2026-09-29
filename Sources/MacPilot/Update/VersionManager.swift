@@ -125,6 +125,8 @@ final class VersionManager: ObservableObject {
                 restoreSnapshot: restoreSnapshot
             )
         } catch {
+            // 弹窗只承诺「详细原因见诊断日志」，这里必须真的落一条。
+            DiagnosticLog.write("SoftwareUpdate", "Version switch failed: \(String(describing: error))")
             lastErrorMessage = AppText.value(
                 "versionManagerSwitchFailed",
                 language: model?.language ?? .system,

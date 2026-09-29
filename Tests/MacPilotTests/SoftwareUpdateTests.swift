@@ -246,3 +246,68 @@ struct SoftwareUpdateTests {
         #expect(AppText.value("updateErrorLocation", language: .english).contains("Applications"))
     }
 }
+
+/// `downloadAndValidate` 的 `isCancelled` 是"已取消"语义，下载链要的是
+/// "继续"语义。极性一旦传反，每次下载都会在第一个镜像之前抛
+/// CancellationError——v1.1.482 的版本切换正是这样失败的。
+@MainActor
+struct DownloadAndValidatePolarityTests {
+    private func makeRelease(sha256: String) -> SoftwareRelease {
+        SoftwareRelease(
+            version: SoftwareVersion("1.1.480")!,
+            releaseNotes: "",
+            archiveURL: URL(
+                string: "https://github.com/\(AppIdentity.githubRepository)/releases/download/v1.1.480/MacPilot-1.1.480-arm64-macos.zip"
+            )!,
+            sha256: sha256
+        )
+    }
+
+    @Test func defaultSeamIsNotCancelledAndStillAttemptsTheFirstMirror() async throws {
+        let updater = SoftwareUpdater(currentVersion: "1.1.479")
+        let archive = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MacPilotTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: archive) }
+        try Data("not a real app bundle".utf8).write(to: archive)
+        let rememberedMirror = UserDefaults.standard.string(forKey: "updateDownloadMirrorHost")
+        defer {
+            if let rememberedMirror {
+                UserDefaults.standard.set(rememberedMirror, forKey: "updateDownloadMirrorHost")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "updateDownloadMirrorHost")
+            }
+        }
+        var attempts = 0
+        do {
+            // 校验器会拒绝这份假档案；关键断言是：默认 isCancelled 绝不能
+            // 让下载在网络请求发出之前就以 CancellationError 收场。
+            _ = try await updater.downloadAndValidate(
+                makeRelease(sha256: try UpdatePackageValidator.sha256(of: archive)),
+                fetch: { request in
+                    attempts += 1
+                    return (archive, HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+                    )!)
+                }
+            )
+            Issue.record("the fake archive must fail validation")
+        } catch {
+            #expect(!(error is CancellationError), "下载还没开始就被取消：isCancelled 极性传反了")
+        }
+        #expect(attempts == 1, "第一个镜像必须真的被尝试")
+    }
+
+    @Test func explicitCancellationStopsBeforeAnyFetch() async {
+        let updater = SoftwareUpdater(currentVersion: "1.1.479")
+        await #expect(throws: CancellationError.self) {
+            _ = try await updater.downloadAndValidate(
+                makeRelease(sha256: String(repeating: "0", count: 64)),
+                isCancelled: { true },
+                fetch: { _ in
+                    Issue.record("cancelled download must not fetch")
+                    throw URLError(.cancelled)
+                }
+            )
+        }
+    }
+}

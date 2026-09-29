@@ -342,23 +342,26 @@ final class SoftwareUpdater: ObservableObject {
     /// converge here: exactly one downloader, exactly one validator.
     func downloadAndValidate(
         _ release: SoftwareRelease,
-        isCancelled: @escaping () -> Bool = { false }
+        isCancelled: @escaping () -> Bool = { false },
+        fetch: ((URLRequest) async throws -> (URL, URLResponse))? = nil
     ) async throws -> VerifiedUpdatePackage {
         state = .downloading(release)
+        // `isCancelled` 是"已取消"语义，下载链要的是"继续"语义，这里取反。
+        // 传反了会让每次下载在第一个镜像前就抛 CancellationError。
+        let fetchArchive = fetch ?? { request in try await self.session.download(for: request) }
         let downloadURL = try await UpdateArchiveDownloader.download(
             release: release,
             preferredHost: UserDefaults.standard.string(forKey: "updateDownloadMirrorHost"),
-            shouldContinue: isCancelled,
+            shouldContinue: { !isCancelled() },
             didVerifySource: { source in
                 if source.host != release.archiveURL.host {
                     UserDefaults.standard.set(source.host, forKey: "updateDownloadMirrorHost")
                 } else {
                     UserDefaults.standard.removeObject(forKey: "updateDownloadMirrorHost")
                 }
-            }
-        ) { request in
-            try await self.session.download(for: request)
-        }
+            },
+            fetch: fetchArchive
+        )
         defer { try? FileManager.default.removeItem(at: downloadURL) }
         state = .installing(release)
         return try await Task.detached(priority: .userInitiated) {

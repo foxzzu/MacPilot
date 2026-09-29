@@ -46,8 +46,10 @@ struct VersionManagerSheet: View {
         .frame(width: 580, height: 640)
         .task { await versionManager.refresh() }
         .sheet(isPresented: $versionManager.showsConfirmation) { confirmationSheet }
+        // lastErrorMessage 已是完整文案；再套一次格式串会出现
+        // 「版本切换失败：版本切换失败：…」的重复前缀。
         .alert(
-            t("versionManagerSwitchFailed", versionManager.lastErrorMessage ?? ""),
+            versionManager.lastErrorMessage ?? "",
             isPresented: Binding(
                 get: { versionManager.lastErrorMessage != nil },
                 set: { if !$0 { versionManager.lastErrorMessage = nil } }
