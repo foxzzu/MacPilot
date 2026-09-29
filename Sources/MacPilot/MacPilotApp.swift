@@ -5814,13 +5814,12 @@ private struct SoftwareUpdateSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack {
-                checkButton
-                Button(t("versionManagerOpen")) {
-                    showsVersionManager = true
-                }
-                .disabled(model.isVersionSwitching)
+            // 「检查更新…」由下方状态区分支渲染，这里只放版本管理入口，
+            // 避免出现两个检查更新按钮。
+            Button(t("versionManagerOpen")) {
+                showsVersionManager = true
             }
+            .disabled(model.isVersionSwitching)
             if model.isVersionSwitching {
                 Text(t("versionManagerPhaseReplacing"))
                     .font(.caption)
