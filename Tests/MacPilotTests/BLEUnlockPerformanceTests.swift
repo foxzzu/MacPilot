@@ -3,6 +3,28 @@ import Testing
 @testable import MacPilot
 
 struct BLEUnlockPerformanceTests {
+    @Test func disabledBluetoothNeverInitializesACentralOnLaunchEvenWithSavedDevices() {
+        #expect(!BLEUnlockAuthorizationGate.shouldInitializeCentralManager(
+            authorization: .allowedAlways,
+            settingsEnabled: false,
+            hasMonitoredDevice: true,
+            explicitUserAction: false
+        ))
+    }
+
+    @MainActor
+    @Test func activatingADisabledFeatureDoesNotStartMonitoringOrObservers() {
+        let model = BLEUnlockModel()
+        model.settings.isEnabled = false
+        model.monitoredUUID = UUID()
+        model.activateFromConfiguration()
+        #expect(!model.isRunning)
+        #expect(model.diagnosticTaskCount == 0)
+        #expect(model.diagnosticObserverCount == 0)
+        #expect(!model.isScanning)
+        model.shutdown()
+    }
+
     @Test func bluetoothStartupDoesNotPromptBeforeExplicitUserAction() {
         #expect(!BLEUnlockAuthorizationGate.shouldInitializeCentralManager(
             authorization: .notDetermined,

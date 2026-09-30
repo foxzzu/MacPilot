@@ -2,13 +2,9 @@ import Foundation
 
 /// Finds other running copies of this exact executable.
 ///
-/// Two accounts fast-user-switched on one Mac each run their own MacPilot, so
-/// two same-bundle processes hold independent CoreBluetooth sessions at once.
-/// That combination left bluetoothd delivering advertisements to neither
-/// process — the September 2026 proximity-unlock wedge — and the state
-/// outlived both the app relaunch and a machine reboot while the second
-/// session kept coming back. Detection is the cheap half of the fix: surface
-/// the conflict instead of letting proximity unlock fail silently.
+/// This reports process presence only. It cannot observe another session's
+/// feature switches or CoreBluetooth activity and must never label a matching
+/// process as a confirmed Bluetooth conflict.
 enum DuplicateInstanceDetector {
     struct ProcessSnapshot: Equatable {
         let pid: pid_t
@@ -58,7 +54,7 @@ enum DuplicateInstanceDetector {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    static func conflictingPIDs(
+    static func otherPIDs(
         in processes: [ProcessSnapshot],
         executablePath: String,
         currentPID: pid_t
@@ -70,11 +66,11 @@ enum DuplicateInstanceDetector {
             .sorted()
     }
 
-    static func conflictingInstanceCount(
+    static func otherInstanceCount(
         executablePath: String = Bundle.main.executableURL?.path ?? "",
         currentPID: pid_t = ProcessInfo.processInfo.processIdentifier,
         processes: [ProcessSnapshot] = snapshotRunningProcesses()
     ) -> Int {
-        conflictingPIDs(in: processes, executablePath: executablePath, currentPID: currentPID).count
+        otherPIDs(in: processes, executablePath: executablePath, currentPID: currentPID).count
     }
 }

@@ -412,19 +412,28 @@ struct BLEMonitoringRecoveryPlan: Equatable {
     }
 }
 
-/// Detects the failure mode where CoreBluetooth keeps reporting a powered-on
-/// radio and an "active" scan, but stops delivering advertisements to the
-/// process entirely.
-///
-/// The September 2026 proximity-unlock wedge looked exactly like a healthy
-/// scan from inside the app — state poweredOn, `scanForPeripherals` accepted,
-/// recovery restarts running — while an unfiltered scan from another process
-/// received hundreds of advertisements per second, including the monitored
-/// device a metre away. That state survives central manager recreation and
-/// app relaunch, so detection cannot live inside the callback machinery: the
-/// only observable signature is that an unfiltered scan hears *nothing at
-/// all* — not even unrelated neighbours — for far longer than any real radio
-/// environment stays quiet.
+/// Rebuild monitoring after a central-manager reset without waiting for a
+/// duplicate advertisement from a device CoreBluetooth already knows.
+@MainActor
+enum BLEMonitoringRestoration {
+    static func restore<Device>(
+        identifiers: [UUID],
+        passiveMode: Bool,
+        retrieve: (UUID) -> Device?,
+        connect: (UUID, Device) -> Void,
+        armSignalTimeout: (UUID) -> Void
+    ) {
+        for identifier in identifiers {
+            armSignalTimeout(identifier)
+            guard !passiveMode, let device = retrieve(identifier) else { continue }
+            connect(identifier, device)
+        }
+    }
+}
+
+/// Detects prolonged silence while monitoring is active. Duplicate filtering
+/// and device advertising behavior can also produce silence, so this is a
+/// recovery trigger, not proof of a system fault or cross-session contention.
 struct BLEAdvertisementLiveness: Equatable {
     let silenceThreshold: TimeInterval
     private(set) var lastActivityAt: Date

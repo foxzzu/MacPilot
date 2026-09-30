@@ -75,13 +75,12 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
     @Published private(set) var bluetoothPoweredOn = false
     @Published private(set) var bluetoothPowerWarned = false
     @Published private(set) var isScanning = false
-    /// True when monitoring should be producing CoreBluetooth callbacks but
-    /// none have arrived for a long window — the signature of the system
-    /// stopping advertisement delivery to this process.
+    /// True after prolonged silence during active monitoring. This is a
+    /// symptom requiring recovery, not a diagnosis of the system or peers.
     @Published private(set) var advertisementStreamStalled = false
     /// Other running copies of this executable, usually MacPilot launched in
     /// another user's fast-switched session.
-    @Published private(set) var conflictingInstanceCount = 0
+    @Published private(set) var otherInstanceCount = 0
 
     var settings = BLEUnlockSettings()
 
@@ -483,7 +482,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
         recoveringFromSystemSleep = false
         stopLivenessTimer()
         advertisementStreamStalled = false
-        conflictingInstanceCount = 0
+        otherInstanceCount = 0
         // Drop the CoreBluetooth central too: holding it keeps a Bluetooth XPC
         // session (and its delegate graph) alive for nothing while the feature
         // is off. `ensureCentralManager()` recreates it on the next enable.
@@ -653,6 +652,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
             return
         }
 
+        peripheral.delegate = self
         if peripheral.state == .connected {
             requestRSSIRead(for: runtime)
             return
@@ -694,6 +694,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
     // MARK: CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard central === centralMgr else { return }
         log("central state updated state=\(String(describing: central.state)) authorization=\(String(describing: CBManager.authorization))")
         switch central.state {
         case .poweredOn:
@@ -705,6 +706,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
                 } else {
                     scanForPeripherals()
                 }
+                restoreKnownMonitoredPeripherals(using: central)
             } else if isScanning {
                 scanForPeripherals()
             }
@@ -729,6 +731,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        guard central === centralMgr else { return }
         let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
         noteAdvertisementActivity()
 
@@ -778,6 +781,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        guard central === centralMgr else { return }
         let monitoredRuntime = runtime(for: peripheral.identifier)
         let isMonitored = monitoredRuntime != nil
         log("peripheral connected monitored=\(isMonitored) uuid=\(peripheral.identifier.uuidString) state=\(String(describing: peripheral.state))")
@@ -798,6 +802,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        guard central === centralMgr else { return }
         log("peripheral connection failed monitored=\(runtime(for: peripheral.identifier) != nil) error=\(error?.localizedDescription ?? "unknown")")
         if let runtime = runtime(for: peripheral.identifier) {
             runtime.connectionTimer?.stop()
@@ -809,6 +814,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        guard central === centralMgr else { return }
         log("peripheral disconnected monitored=\(runtime(for: peripheral.identifier) != nil) error=\(error?.localizedDescription ?? "none")")
         if let runtime = runtime(for: peripheral.identifier) {
             runtime.connectionTimer?.stop()
@@ -824,7 +830,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
     // MARK: CBPeripheralDelegate
 
     func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
-        guard let runtime = runtime(for: peripheral.identifier) else { return }
+        guard let runtime = runtime(for: peripheral.identifier), runtime.peripheral === peripheral else { return }
         runtime.rssiRequestTimeoutTimer?.stop()
         runtime.rssiRequestTimeoutTimer = nil
         runtime.rssiReadGate.finish()
@@ -1344,21 +1350,32 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
             return
         }
 
-        for uuid in monitoredUUIDs {
-            let runtime = ensureRuntime(for: uuid)
-            if runtime.peripheral == nil,
-               let peripheral = central.retrievePeripherals(withIdentifiers: [uuid]).first {
-                runtime.peripheral = peripheral
-                if !settings.passiveMode {
-                    connectMonitoredPeripheral(for: uuid)
-                }
-            }
-        }
+        restoreKnownMonitoredPeripherals(using: central)
 
         // CoreBluetooth can continue reporting isScanning after deep idle even
         // though no discoveries arrive. A stop/start creates a fresh session.
         central.stopScan()
         scanForPeripherals()
+    }
+
+    private func restoreKnownMonitoredPeripherals(using central: CBCentralManager) {
+        BLEMonitoringRestoration.restore(
+            identifiers: monitoredUUIDs,
+            passiveMode: settings.passiveMode,
+            retrieve: { uuid in
+                let runtime = self.ensureRuntime(for: uuid)
+                return runtime.peripheral ?? central.retrievePeripherals(withIdentifiers: [uuid]).first
+            },
+            connect: { uuid, peripheral in
+                self.ensureRuntime(for: uuid).peripheral = peripheral
+                self.log("restoring known monitored peripheral uuid=\(uuid.uuidString) state=\(peripheral.state.rawValue)")
+                self.connectMonitoredPeripheral(for: uuid)
+            },
+            armSignalTimeout: { uuid in
+                let runtime = self.ensureRuntime(for: uuid)
+                if runtime.signalTimer == nil { self.resetSignalTimer(for: uuid) }
+            }
+        )
     }
 
     private var monitoringHasFreshSignal: Bool {
@@ -1485,21 +1502,20 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
         if silent, !advertisementStreamStalled {
             advertisementStreamStalled = true
             log("advertisement stream stalled reason=noCallbacksWhileMonitoringActive threshold=\(Int(advertisementLiveness.silenceThreshold))s; attempting monitoring recovery")
-            // In-process recovery cannot fix every cause (the 2026-09 wedge
-            // survived it), but it is free to try and the published flag is
-            // what tells the user something the callbacks never will.
+            // Silence alone does not identify its cause. Restore monitoring
+            // and report the symptom without blaming other running copies.
             startMonitoringRecovery(reason: "advertisementSilence", restartImmediately: true)
         }
-        checkConflictingInstances()
+        checkOtherInstances()
     }
 
-    private func checkConflictingInstances() {
-        let count = DuplicateInstanceDetector.conflictingInstanceCount()
-        guard count != conflictingInstanceCount else { return }
-        if count > conflictingInstanceCount {
-            log("conflicting instances detected count=\(count) hint=same-bundle instances in other sessions can wedge BLE advertisement delivery")
+    private func checkOtherInstances() {
+        let count = DuplicateInstanceDetector.otherInstanceCount()
+        guard count != otherInstanceCount else { return }
+        if count > otherInstanceCount {
+            log("other instances detected count=\(count) bluetoothActivity=unknown; process presence does not establish a BLE conflict")
         }
-        conflictingInstanceCount = count
+        otherInstanceCount = count
     }
 
     private var monitoringNeedsWakeRestart: Bool {

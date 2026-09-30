@@ -2,10 +2,7 @@ import Foundation
 import Testing
 @testable import MacPilot
 
-/// Two fast-switched accounts each running MacPilot left bluetoothd delivering
-/// advertisements to neither process (September 2026 wedge). Detection pins
-/// the conflict so the UI can name it instead of proximity unlock silently
-/// dying.
+/// Process identity is diagnostic context, not proof of radio contention.
 struct DuplicateInstanceDetectorTests {
     private let appPath = "/Applications/MacPilot.app/Contents/MacOS/MacPilot"
 
@@ -21,16 +18,16 @@ struct DuplicateInstanceDetectorTests {
             process(103, nil),           // exited before its path resolved
         ]
 
-        #expect(DuplicateInstanceDetector.conflictingPIDs(
+        #expect(DuplicateInstanceDetector.otherPIDs(
             in: processes,
             executablePath: appPath,
-            currentPID: 100  // 100 is this process; 101 is the conflict
+            currentPID: 100  // 100 is this process; 101 is the other process
         ) == [101])
     }
 
     @Test func excludesTheCurrentProcessAndNeverMatchesItself() {
         let processes = [process(7, appPath)]
-        #expect(DuplicateInstanceDetector.conflictingPIDs(
+        #expect(DuplicateInstanceDetector.otherPIDs(
             in: processes,
             executablePath: appPath,
             currentPID: 7
@@ -39,7 +36,7 @@ struct DuplicateInstanceDetectorTests {
 
     @Test func anUnknownExecutablePathMatchesNothing() {
         let processes = [process(7, appPath)]
-        #expect(DuplicateInstanceDetector.conflictingPIDs(
+        #expect(DuplicateInstanceDetector.otherPIDs(
             in: processes,
             executablePath: "",
             currentPID: 1
@@ -48,7 +45,7 @@ struct DuplicateInstanceDetectorTests {
 
     @Test func resultsAreSortedByPIDForStableLogging() {
         let processes = [process(30, appPath), process(20, appPath), process(10, appPath)]
-        #expect(DuplicateInstanceDetector.conflictingPIDs(
+        #expect(DuplicateInstanceDetector.otherPIDs(
             in: processes,
             executablePath: appPath,
             currentPID: 10
@@ -58,7 +55,7 @@ struct DuplicateInstanceDetectorTests {
     @Test func theLiveProcessTableNeverFlagsThisTestProcess() {
         // Sanity check on the real sysctl path: this test's own executable is
         // running right now, and the detector must exclude it by PID.
-        #expect(DuplicateInstanceDetector.conflictingInstanceCount(
+        #expect(DuplicateInstanceDetector.otherInstanceCount(
             executablePath: CommandLine.arguments.first ?? "",
             currentPID: ProcessInfo.processInfo.processIdentifier,
             processes: DuplicateInstanceDetector.snapshotRunningProcesses()
