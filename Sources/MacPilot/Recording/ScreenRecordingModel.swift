@@ -552,7 +552,7 @@ final class ScreenRecordingModel: ObservableObject {
         start()
     }
 
-    /// Starts a recording immediately when a selection has already been made.
+    /// Starts a recording immediately with a selection in global AppKit coordinates.
     /// Passing `nil` from the public `start()` path requests the pre-record
     /// area selector for the configured area/application modes.
     func start(captureRect: CGRect?) {

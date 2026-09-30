@@ -118,7 +118,7 @@ final class ScreenRecordingPrepareBarController: ObservableObject {
     /// Snaps the region to 16:9 (`aspect` = 16/9) or 9:16, keeping the
     /// region's center and staying inside the display that contains it.
     func reframe(toAspect aspect: CGFloat) {
-        guard let displayBounds = Self.quartzDisplayFrame(containing: regionRect) else { return }
+        guard let displayBounds = Self.appKitDisplayFrame(containing: regionRect) else { return }
         regionRect = RecordingRegionFraming.rectFitting(regionRect, aspect: aspect, in: displayBounds)
         activeAspect = aspect
     }
@@ -140,10 +140,7 @@ final class ScreenRecordingPrepareBarController: ObservableObject {
 
     /// Places the bar just below the region (AppKit coordinates); flips
     /// above it when there is no room and clamps into the region's screen.
-    static func barOrigin(for quartzRect: CGRect, barSize: NSSize) -> NSPoint {
-        let region = SmartCaptureCoordinateConversion.appKitRect(fromQuartzRect: quartzRect) ?? CGRect(
-            x: quartzRect.minX, y: quartzRect.minY, width: quartzRect.width, height: quartzRect.height
-        )
+    static func barOrigin(for region: CGRect, barSize: NSSize) -> NSPoint {
         let screen = NSScreen.screens.first { $0.frame.intersects(region) } ?? NSScreen.main
         let frame = screen?.visibleFrame ?? CGRect(
             x: region.minX, y: region.minY, width: region.width, height: region.height
@@ -159,11 +156,9 @@ final class ScreenRecordingPrepareBarController: ObservableObject {
         return origin
     }
 
-    private static func quartzDisplayFrame(containing rect: CGRect) -> CGRect? {
+    private static func appKitDisplayFrame(containing rect: CGRect) -> CGRect? {
         for screen in NSScreen.screens {
-            guard let frame = SmartCaptureCoordinateConversion.quartzRect(fromAppKitRect: screen.frame) else {
-                continue
-            }
+            let frame = screen.frame
             if frame.intersects(rect) || frame.contains(rect.origin) {
                 return frame
             }

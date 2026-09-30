@@ -1718,6 +1718,18 @@ final class SmartScreenshotController {
     }
 
     #if DEBUG
+    func testDeliverRecordingSelection(
+        rect: CGRect,
+        mode: SmartCaptureSelectionMode,
+        action: AreaSelectionAction? = nil
+    ) {
+        if let action {
+            onRecordingSelectionAction(rect, mode, action)
+        } else {
+            onRecordingSelection(rect, mode)
+        }
+    }
+
     var testOverlayCount: Int { overlays.count }
     var testShortcutRegistrationAttemptCount: Int { shortcutRegistrationAttemptCount }
     #endif

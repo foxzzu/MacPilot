@@ -523,11 +523,12 @@ final class ScreenCaptureModel: ObservableObject, ManagedFeature {
     var language: AppLanguage = .system
 
     var persist: (() -> Void)?
-    /// Receives the Quartz-space rectangle selected by the shared overlay
+    /// Receives the global AppKit rectangle selected by the shared overlay
     /// when a recording starts in area/application mode.
+    /// The engine converts to Quartz once, at the ScreenCaptureKit boundary.
     var onRecordingSelection: ((CGRect, ScreenRecordingCaptureMode) -> Void)?
     /// Receives non-terminal recording-bar changes and the final start/settings
-    /// action while the selection overlay is still visible.
+    /// action with the same global AppKit rectangle.
     var onRecordingSelectionAction: ((CGRect, ScreenRecordingCaptureMode, AreaSelectionAction) -> Void)?
     /// Supplies the current recording preferences to the in-selection bar.
     /// Kept as a closure so the screenshot model does not own the recorder.
@@ -568,21 +569,13 @@ final class ScreenCaptureModel: ObservableObject, ManagedFeature {
             guard let self else { return }
             let recordingMode: ScreenRecordingCaptureMode =
                 mode == .recordingApplication ? .application : .area
-            guard let quartzRect = SmartCaptureCoordinateConversion.quartzRect(fromAppKitRect: rect) else {
-                self.errorMessage = AppText.value("scCaptureCoordinateUnavailable", language: self.language)
-                return
-            }
-            self.onRecordingSelection?(quartzRect, recordingMode)
+            self.onRecordingSelection?(rect, recordingMode)
         },
         onRecordingSelectionAction: { [weak self] rect, mode, action in
             guard let self else { return }
             let recordingMode: ScreenRecordingCaptureMode =
                 mode == .recordingApplication ? .application : .area
-            guard let quartzRect = SmartCaptureCoordinateConversion.quartzRect(fromAppKitRect: rect) else {
-                self.errorMessage = AppText.value("scCaptureCoordinateUnavailable", language: self.language)
-                return
-            }
-            self.onRecordingSelectionAction?(quartzRect, recordingMode, action)
+            self.onRecordingSelectionAction?(rect, recordingMode, action)
         },
         onRepeatLastArea: { [weak self] in self?.repeatSmartCapture() },
         shortcutBinding: settings.smartCaptureShortcut,
@@ -612,6 +605,12 @@ final class ScreenCaptureModel: ObservableObject, ManagedFeature {
         onQuickCopySave: { [weak self] image in self?.saveSmartCaptureQuickCopy(image) }
         )
     }
+
+    #if DEBUG
+    func testMakeSmartCaptureController() -> SmartScreenshotController {
+        makeSmartCaptureController()
+    }
+    #endif
 
     private func ensureSmartCapture() -> SmartScreenshotController {
         if let smartCapture {
