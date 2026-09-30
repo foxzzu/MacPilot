@@ -9,6 +9,66 @@ import UniformTypeIdentifiers
 
 /// Geometry coverage for the source-migrated Snapzy frozen-display pipeline.
 struct SnapzyCaptureTests {
+    @Test(arguments: [CGFloat(0), CGFloat(28)])
+    @MainActor func recordingSelectionKeepsTheDraggedScreenCoordinates(contentInset: CGFloat) throws {
+        _ = NSApplication.shared
+        let screen = try #require(NSScreen.screens.first)
+        let controller = SnapzyAreaSelectionController.shared
+        defer { controller.cancelSelection() }
+        var selectedRect: CGRect?
+        controller.startSelection(
+            mode: .recording,
+            initialInteractionMode: .smartElement,
+            recordingConfiguration: RecordingSelectionBarConfiguration(
+                language: .simplifiedChinese,
+                capturesMicrophone: false,
+                capturesSystemAudio: false,
+                videoQuality: .high,
+                cameraEnabled: false
+            ),
+            selectionPreview: { selectedRect = $0.rect },
+            completion: { _ in }
+        )
+        let selectionWindow = try #require(controller.testWindows.first)
+        for window in controller.testWindows { window.orderOut(nil) }
+        let overlay = selectionWindow.overlayView
+        // AppKit may inset the content view; input is in view coordinates,
+        // while the controller and recorder must receive screen coordinates.
+        overlay.frame.origin.y = contentInset
+        overlay.setLivePassthroughInputEnabled(true)
+        let start = CGPoint(x: screen.frame.minX + 100, y: screen.frame.minY + 180)
+        let end = CGPoint(x: start.x + 240, y: start.y + 140)
+        let expected = CGRect(x: start.x, y: start.y, width: 240, height: 140)
+        overlay.handleLivePassthroughMouseDown(atScreenPoint: start)
+        overlay.handleLivePassthroughMouseDragged(atScreenPoint: end)
+        let draggedBorder = overlay.testSelectionBorderPathBounds
+        overlay.handleLivePassthroughMouseUp(atScreenPoint: end)
+        overlay.layoutSubtreeIfNeeded()
+        #expect(selectedRect == expected)
+        #expect(overlay.testSelectionBorderPathBounds == draggedBorder)
+        #expect(selectionWindow.convertToScreen(overlay.convert(try #require(overlay.testSelectionBorderPathBounds), to: nil)) == expected)
+        let committedRect = try #require(selectedRect)
+        let quartzRect = try #require(SmartCaptureCoordinateConversion.quartzRect(fromAppKitRect: committedRect))
+        let displayFrame = CGDisplayBounds(try #require(screen.displayID))
+        #expect(quartzRect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY) == CGRect(
+            x: expected.minX - screen.frame.minX,
+            y: screen.frame.maxY - expected.maxY,
+            width: expected.width,
+            height: expected.height
+        ))
+
+        // Moving the finalized frame must use the same conversion as the
+        // initial drag; otherwise starting recording uses another offset.
+        let center = CGPoint(x: expected.midX, y: expected.midY)
+        let movedCenter = CGPoint(x: center.x + 20, y: center.y + 30)
+        overlay.handleLivePassthroughMouseDown(atScreenPoint: center)
+        overlay.handleLivePassthroughMouseDragged(atScreenPoint: movedCenter)
+        overlay.handleLivePassthroughMouseUp(atScreenPoint: movedCenter)
+        let movedRect = expected.offsetBy(dx: 20, dy: 30)
+        #expect(selectedRect == movedRect)
+        #expect(selectionWindow.convertToScreen(overlay.convert(try #require(overlay.testSelectionBorderPathBounds), to: nil)) == movedRect)
+    }
+
     @Test func interactiveDisplayCaptureIncludesMacPilotWindows() {
         #expect(!SnapzyCaptureApplicationVisibilityPolicy.excludesOwnApplicationFromDisplaySnapshot)
     }

@@ -236,23 +236,13 @@ extension AreaSelectionWindow: AreaSelectionOverlayViewDelegate {
   }
 
   private func convertToScreenCoordinates(_ rect: CGRect) -> CGRect {
-    // The rect is in window coordinates (bottom-left origin)
-    // Convert to global screen coordinates (also bottom-left origin)
-    let windowFrame = frame
-
-    return CGRect(
-      x: windowFrame.origin.x + rect.origin.x,
-      y: windowFrame.origin.y + rect.origin.y,
-      width: rect.width,
-      height: rect.height
-    )
+    // Input is in overlay coordinates. Its origin can differ from the
+    // window's content origin after AppKit layout (including screen insets).
+    convertToScreen(overlayView.convert(rect, to: nil))
   }
 
   private func convertToScreenPoint(_ point: CGPoint) -> CGPoint {
-    CGPoint(
-      x: frame.origin.x + point.x,
-      y: frame.origin.y + point.y
-    )
+    convertPoint(toScreen: overlayView.convert(point, to: nil))
   }
 }
 
@@ -2604,12 +2594,7 @@ final class AreaSelectionOverlayView: NSView {
 
   private func convertToLocalRect(_ screenRect: CGRect) -> CGRect {
     guard let window else { return screenRect }
-    return CGRect(
-      x: screenRect.origin.x - window.frame.origin.x,
-      y: screenRect.origin.y - window.frame.origin.y,
-      width: screenRect.width,
-      height: screenRect.height
-    )
+    return convert(window.convertFromScreen(screenRect), from: nil)
   }
 
   // MARK: - Mouse Events
