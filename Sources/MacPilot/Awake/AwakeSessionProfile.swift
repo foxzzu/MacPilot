@@ -17,8 +17,7 @@ import Foundation
 /// 显示器、合盖运行、屏幕保护程序、强制睡眠、电量保护与电源适配器。
 /// 结束时间计算已统一为「使用计时器」，不再是用户可配置项。
 struct AwakeSessionProfileConfiguration: Codable, Equatable, Sendable {
-    /// 分钟数；`0` 表示不限时（手动结束）。「直到指定时间」预设不进方案：
-    /// 绝对日期保存后必然过期，捕获时按剩余时间折算成分钟。
+    /// 分钟数；`0` 表示不限时。指定时间同时保留剩余分钟数供旧版本解码。
     var durationMinutes: Int
     /// 已废弃的用户选项，但字段必须永久保留并始终编码：旧版本解码本结构
     /// 时要求这个键存在，删掉它会让旧版本读不了新配置，降级时整份配置
@@ -35,6 +34,9 @@ struct AwakeSessionProfileConfiguration: Codable, Equatable, Sendable {
     var warnBeforeBatteryTermination: Bool
     var ignoreBatteryLevelOnExternalPower: Bool
     var restartOnPowerReconnect: Bool
+    var autoStartOnLaunch = false
+    var autoStartOnWake = false
+    var untilDate: Date? = nil
 
     /// 从当前全局 Awake 设置捕获一套完整配置。捕获的是「现在这一刻」的
     /// 业务配置，之后全局设置的漂移不会影响已保存的方案。
@@ -57,13 +59,17 @@ struct AwakeSessionProfileConfiguration: Codable, Equatable, Sendable {
             minimumBatteryLevel: settings.safetyPolicy.minimumBatteryLevel,
             warnBeforeBatteryTermination: settings.defaultSession.warnBeforeBatteryTermination,
             ignoreBatteryLevelOnExternalPower: settings.defaultSession.ignoreBatteryLevelOnExternalPower,
-            restartOnPowerReconnect: settings.defaultSession.restartOnPowerReconnect
+            restartOnPowerReconnect: settings.defaultSession.restartOnPowerReconnect,
+            autoStartOnLaunch: settings.defaultSession.autoStartOnLaunch,
+            autoStartOnWake: settings.defaultSession.autoStartOnWake,
+            untilDate: settings.defaultSession.usesUntilDate ? settings.defaultSession.untilDate.flatMap { $0 > now ? $0 : nil } : nil
         )
     }
 
-    /// 方案的结束条件。空缺字段在捕获时就已折算，这里只有两个分支。
+    /// 新版本保留指定日期；历史方案仍按分钟数结束。
     var endCondition: SessionEndCondition {
-        durationMinutes > 0 ? .duration(TimeInterval(durationMinutes) * 60) : .manual
+        if let untilDate { return .date(untilDate) }
+        return durationMinutes > 0 ? .duration(TimeInterval(durationMinutes) * 60) : .manual
     }
 
     /// 方案的 Session 策略。阻止系统休眠是保持唤醒的基线（与默认策略一致）；
@@ -80,6 +86,18 @@ struct AwakeSessionProfileConfiguration: Codable, Equatable, Sendable {
             blockScreenSaver: blockScreenSaver,
             screenSaverIdleMinutes: screenSaverIdleMinutes
         )
+    }
+
+    /// 会话页与方案编辑器共用相同的配置值，界面只维护一套选项。
+    func applySessionSettings(to settings: inout AwakeSettings) {
+        settings.defaultSession.durationMinutes = durationMinutes
+        settings.defaultSession.usesUntilDate = untilDate != nil
+        settings.defaultSession.untilDate = untilDate
+        settings.defaultPolicy.preventDisplaySleep = preventDisplaySleep
+        settings.defaultPolicy.allowSystemSleepWhenDisplayOff = allowSystemSleepWhenDisplayOff
+        settings.defaultPolicy.preventClosedLidSleep = preventClosedLidSleep
+        settings.defaultPolicy.blockScreenSaver = blockScreenSaver
+        settings.defaultPolicy.screenSaverIdleMinutes = screenSaverIdleMinutes
     }
 
     /// 把方案里的电量保护与电源适配器选项写回全局设置。这些选项在
@@ -127,6 +145,7 @@ extension AwakeSessionProfileConfiguration {
         case allowSystemSleepWhenDisplayOff, preventClosedLidSleep, blockScreenSaver
         case screenSaverIdleMinutes, lowBatteryProtectionEnabled, minimumBatteryLevel
         case warnBeforeBatteryTermination, ignoreBatteryLevelOnExternalPower, restartOnPowerReconnect
+        case autoStartOnLaunch, autoStartOnWake, untilDate
     }
 
     /// 宽容解码：beta.5 写出的方案缺 `endCalculation` 键，这里补默认值，
@@ -146,7 +165,10 @@ extension AwakeSessionProfileConfiguration {
             minimumBatteryLevel: try container.decodeIfPresent(Int.self, forKey: .minimumBatteryLevel) ?? 15,
             warnBeforeBatteryTermination: try container.decodeIfPresent(Bool.self, forKey: .warnBeforeBatteryTermination) ?? false,
             ignoreBatteryLevelOnExternalPower: try container.decodeIfPresent(Bool.self, forKey: .ignoreBatteryLevelOnExternalPower) ?? true,
-            restartOnPowerReconnect: try container.decodeIfPresent(Bool.self, forKey: .restartOnPowerReconnect) ?? false
+            restartOnPowerReconnect: try container.decodeIfPresent(Bool.self, forKey: .restartOnPowerReconnect) ?? false,
+            autoStartOnLaunch: try container.decodeIfPresent(Bool.self, forKey: .autoStartOnLaunch) ?? false,
+            autoStartOnWake: try container.decodeIfPresent(Bool.self, forKey: .autoStartOnWake) ?? false,
+            untilDate: try container.decodeIfPresent(Date.self, forKey: .untilDate)
         )
     }
 }

@@ -22,6 +22,16 @@ final class AwakeProfileStore: ObservableObject {
         profiles = loaded
     }
 
+    /// 旧版启动方案选择迁移到方案自身，编辑页才能显示并关闭该选项。
+    /// 仅在加载时调用；历史 Codable 键仍保留，避免影响降级读取。
+    func migrateLegacyAutomaticStart(in settings: inout AwakeSettings) {
+        guard settings.defaultSession.launchProfileEnabled,
+              let id = settings.defaultSession.launchProfileID,
+              let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+        profiles[index].configuration.autoStartOnLaunch = true
+        settings.defaultSession.launchProfileEnabled = false
+    }
+
     func profile(id: UUID) -> AwakeSessionProfile? {
         profiles.first { $0.id == id }
     }

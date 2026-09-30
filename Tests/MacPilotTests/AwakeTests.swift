@@ -309,10 +309,10 @@ struct AwakeTests {
         #expect(AppText.value("awakeDefaultSession", language: .english) == "Default Session")
         #expect(AppText.value("awakeDefaultDuration", language: .simplifiedChinese) == "默认时长")
         #expect(AppText.value("awakeDefaultDuration", language: .english) == "Default duration")
-        #expect(AppText.value("awakeAutoStartOnLaunch", language: .simplifiedChinese) == "App 启动时自动开启默认会话")
-        #expect(AppText.value("awakeAutoStartOnLaunch", language: .english) == "Start the default session when the app launches")
-        #expect(AppText.value("awakeAutoStartOnWake", language: .simplifiedChinese) == "从睡眠唤醒时自动开启默认会话")
-        #expect(AppText.value("awakeAutoStartOnWake", language: .english) == "Start the default session when waking from sleep")
+        #expect(AppText.value("awakeAutoStartOnLaunch", language: .simplifiedChinese) == "启动 MacPilot 时自动开启")
+        #expect(AppText.value("awakeAutoStartOnLaunch", language: .english) == "Start automatically when MacPilot launches")
+        #expect(AppText.value("awakeAutoStartOnWake", language: .simplifiedChinese) == "从睡眠唤醒时自动开启")
+        #expect(AppText.value("awakeAutoStartOnWake", language: .english) == "Start automatically when waking from sleep")
         #expect(AppText.value("awakeSessionConfig", language: .simplifiedChinese) == "Session 配置")
         #expect(AppText.value("awakeSessionConfig", language: .english) == "Session Setup")
         #expect(AppText.value("awakeSessionProtectionTitle", language: .simplifiedChinese) == "第 2 步：Session 保护")
@@ -1291,5 +1291,128 @@ struct AwakeProfileTests {
         _ = store.create(name: "下载 2", configuration: fullConfiguration)
         #expect(store.availableName(base: "下载") == "下载 3")
         #expect(store.availableName(base: " 新方案 ") == "新方案")
+    }
+}
+
+
+@MainActor
+struct AwakeProfileOptionParityTests {
+    @Test func protectionChoicesSurviveSavingAndEditingAProfile() throws {
+        var settings = AwakeSettings.standard
+        settings.defaultSession.durationMinutes = 75
+        settings.defaultPolicy.preventDisplaySleep = true
+        var draft = AwakeSessionProtectionDraft()
+        draft.endOnForcedSleep = true
+        draft.safetyPolicy.lowBatteryProtectionEnabled = false
+        draft.safetyPolicy.minimumBatteryLevel = 33
+        draft.ignoreBatteryLevelOnExternalPower = false
+        draft.restartOnPowerReconnect = true
+        draft.autoStartOnLaunch = true
+        draft.autoStartOnWake = true
+        let captured = draft.applying(to: .capture(from: settings))
+        let store = AwakeProfileStore()
+        let created = store.create(name: "工作", configuration: captured)
+        let decoded = try JSONDecoder().decode(AwakeSessionProfile.self, from: JSONEncoder().encode(created))
+        let editDraft = AwakeSessionProtectionDraft(configuration: decoded.configuration)
+        #expect(editDraft.applying(to: decoded.configuration) == captured)
+        #expect(decoded.configuration.autoStartOnLaunch)
+        #expect(decoded.configuration.autoStartOnWake)
+        #expect(decoded.configuration.durationMinutes == 75)
+        #expect(decoded.configuration.preventDisplaySleep)
+
+        var edited = decoded
+        var changedDraft = editDraft
+        changedDraft.autoStartOnWake = false
+        edited.configuration = changedDraft.applying(to: edited.configuration)
+        store.update(edited)
+        #expect(store.profile(id: created.id)?.configuration.autoStartOnWake == false)
+        #expect(store.profile(id: created.id)?.configuration.autoStartOnLaunch == true)
+    }
+
+    @Test func legacyLaunchSelectionBecomesAnEditableProfileOption() {
+        let store = AwakeProfileStore()
+        let profile = store.create(name: "工作", configuration: .capture(from: .standard))
+        var settings = AwakeSettings.standard
+        settings.defaultSession.launchProfileEnabled = true
+        settings.defaultSession.launchProfileID = profile.id
+        store.migrateLegacyAutomaticStart(in: &settings)
+        #expect(store.profile(id: profile.id)?.configuration.autoStartOnLaunch == true)
+        #expect(!settings.defaultSession.launchProfileEnabled)
+        #expect(settings.defaultSession.launchProfileID == profile.id)
+        var edited = store.profile(id: profile.id)!
+        edited.configuration.autoStartOnLaunch = false
+        store.update(edited)
+        store.migrateLegacyAutomaticStart(in: &settings)
+        #expect(store.profile(id: profile.id)?.configuration.autoStartOnLaunch == false)
+    }
+
+    @Test func historicalProfilesDefaultNewAutomaticStartOptionsToOff() throws {
+        let configuration = try JSONDecoder().decode(AwakeSessionProfileConfiguration.self, from: Data("{}".utf8))
+        #expect(!configuration.autoStartOnLaunch)
+        #expect(!configuration.autoStartOnWake)
+        #expect(configuration.untilDate == nil)
+    }
+
+    @Test func specifiedEndTimeSurvivesCreatingAndEditingAProfile() throws {
+        let now = Date()
+        let deadline = now.addingTimeInterval(3600)
+        var settings = AwakeSettings.standard
+        settings.defaultSession.usesUntilDate = true
+        settings.defaultSession.untilDate = deadline
+        let captured = AwakeSessionProfileConfiguration.capture(from: settings, now: now)
+        let decoded = try JSONDecoder().decode(AwakeSessionProfileConfiguration.self, from: JSONEncoder().encode(captured))
+        #expect(decoded.untilDate == deadline)
+        #expect(decoded.endCondition == .date(deadline))
+        var target = AwakeSettings.standard
+        decoded.applySessionSettings(to: &target)
+        #expect(target.defaultSession.endCondition == .date(deadline))
+    }
+
+    @Test func automaticStartRunsTheSavedProfileAndUsesItsLatestEdits() {
+        let manager = AwakeSessionManager(assertionController: TestAssertionController(), powerStateProvider: TestPowerStateProvider())
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        manager.profileStore = store
+        var configuration = AwakeSessionProfileConfiguration.capture(from: .standard)
+        configuration.durationMinutes = 75
+        configuration.autoStartOnLaunch = true
+        configuration.autoStartOnWake = true
+        var profile = store.create(name: "工作", configuration: configuration)
+        #expect(manager.startLaunchProfileSessionIfEnabled(from: store) != nil)
+        #expect(manager.activeSessions.first?.source == .profile(name: "工作"))
+        #expect(manager.activeSessions.first?.endCondition == .duration(75 * 60))
+        #expect(manager.startLaunchProfileSessionIfEnabled(from: store) == nil)
+        manager.endAllInteractiveSessions()
+        profile.configuration.durationMinutes = 30
+        store.update(profile)
+        manager.handleSystemWake()
+        #expect(manager.activeSessions.first?.endCondition == .duration(30 * 60))
+        #expect(manager.activeSessionCount == 1)
+        manager.handleSystemWake()
+        #expect(manager.activeSessionCount == 1)
+        manager.endAllInteractiveSessions()
+        profile.configuration.autoStartOnWake = false
+        store.update(profile)
+        manager.handleSystemWake()
+        #expect(manager.activeSessions.isEmpty)
+    }
+
+    @Test func automaticStartSkipsExpiredAndDeletedProfiles() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let manager = AwakeSessionManager(assertionController: TestAssertionController(), powerStateProvider: TestPowerStateProvider(), now: { now })
+        defer { manager.shutdown() }
+        let store = AwakeProfileStore()
+        manager.profileStore = store
+        var configuration = AwakeSessionProfileConfiguration.capture(from: .standard)
+        configuration.autoStartOnLaunch = true
+        configuration.autoStartOnWake = true
+        configuration.untilDate = now.addingTimeInterval(-60)
+        let profile = store.create(name: "已过期", configuration: configuration)
+        #expect(manager.startLaunchProfileSessionIfEnabled(from: store) == nil)
+        manager.handleSystemWake()
+        #expect(manager.activeSessions.isEmpty)
+        store.delete(id: profile.id)
+        manager.handleSystemWake()
+        #expect(manager.activeSessions.isEmpty)
     }
 }

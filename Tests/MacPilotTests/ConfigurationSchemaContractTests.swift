@@ -56,7 +56,8 @@ struct ConfigurationSchemaContractTests {
             minimumBatteryLevel: 15,
             warnBeforeBatteryTermination: false,
             ignoreBatteryLevelOnExternalPower: true,
-            restartOnPowerReconnect: false
+            restartOnPowerReconnect: false,
+            untilDate: Date(timeIntervalSince1970: 1_000)
         )
         try assertEncodedKeys(
             of: configuration,
@@ -66,7 +67,7 @@ struct ConfigurationSchemaContractTests {
                 "preventClosedLidSleep", "blockScreenSaver", "screenSaverIdleMinutes",
                 "lowBatteryProtectionEnabled", "minimumBatteryLevel",
                 "warnBeforeBatteryTermination", "ignoreBatteryLevelOnExternalPower",
-                "restartOnPowerReconnect"
+                "restartOnPowerReconnect", "autoStartOnLaunch", "autoStartOnWake", "untilDate"
             ]
         )
     }

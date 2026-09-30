@@ -62,6 +62,7 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
 
     /// Called by `MacPilotModel` when the user-facing Awake preferences change.
     var persist: (() -> Void)?
+    weak var profileStore: AwakeProfileStore?
 
     init(
         assertionController: any AwakeAssertionControlling = AwakeAssertionController(),
@@ -232,8 +233,19 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
     /// the caller can fall back to the default session.
     @discardableResult
     func startLaunchProfileSessionIfEnabled(from store: AwakeProfileStore) -> UUID? {
-        guard settings.isEnabled, settings.defaultSession.launchProfileEnabled else { return nil }
-        guard activeSessions.isEmpty else { return nil }
+        guard settings.isEnabled, activeSessions.isEmpty else { return nil }
+        let automaticProfiles = store.profiles.filter { $0.configuration.autoStartOnLaunch }
+        if !automaticProfiles.isEmpty {
+            var firstSessionID: UUID?
+            for profile in automaticProfiles {
+                if let date = profile.configuration.untilDate, date <= now() { continue }
+                let id = store.launch(profile.id, in: self)
+                if firstSessionID == nil { firstSessionID = id }
+            }
+            if let firstSessionID { return firstSessionID }
+        }
+        // 兼容旧版本保存的启动方案选择；新表单不再写入这个选择。
+        guard settings.defaultSession.launchProfileEnabled else { return nil }
         guard let profileID = settings.defaultSession.launchProfileID,
               let profile = store.profile(id: profileID) else { return nil }
         logger.notice("Auto-starting launch profile: \(profile.name, privacy: .public)")
@@ -260,6 +272,14 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
             self.sleepStartedAt = nil
         }
         refreshPowerState()
+        guard settings.isEnabled, activeSessions.isEmpty else { return }
+        if let profileStore {
+            let automaticProfiles = profileStore.profiles.filter { $0.configuration.autoStartOnWake }
+            for profile in automaticProfiles {
+                if let date = profile.configuration.untilDate, date <= now() { continue }
+                profileStore.launch(profile.id, in: self)
+            }
+        }
         guard settings.defaultSession.autoStartOnWake, activeSessions.isEmpty else { return }
         logger.notice("Auto-starting default session after system wake")
         _ = startDefaultSession()

@@ -95,8 +95,7 @@ struct AwakeSettingsView: View {
         }
     }
 
-    /// 统一的 Session 卡片：这里的全部配置就是「默认会话」——手动开始与
-    /// 启动、唤醒后的自动开始使用同一套设置，只有一处需要维护。
+    /// 会话页与方案的新建、编辑共用同一套选项。
     private var sessionCard: some View {
         SettingsCard {
             Text(model.t("awakeSessionConfig")).font(.headline)
@@ -104,71 +103,9 @@ struct AwakeSettingsView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Picker(model.t("awakeSessionDuration"), selection: defaultDurationBinding) {
-                Text(model.t("awakeUnlimited")).tag(AwakeDefaultDurationPreset.unlimited)
-                Text(model.t("awake30Minutes")).tag(AwakeDefaultDurationPreset.thirtyMinutes)
-                Text(model.t("awakeOneHour")).tag(AwakeDefaultDurationPreset.oneHour)
-                Text(model.t("awakeTwoHours")).tag(AwakeDefaultDurationPreset.twoHours)
-                Text(model.t("awakeFourHours")).tag(AwakeDefaultDurationPreset.fourHours)
-                Text(model.t("awakeCustomDuration")).tag(AwakeDefaultDurationPreset.customDuration)
-                Text(model.t("awakeUntilDate")).tag(AwakeDefaultDurationPreset.untilDate)
-            }
-
-            if defaultDurationPreset == .customDuration {
-                HStack {
-                    Text(model.t("awakeCustomDuration"))
-                    Spacer()
-                    TextField(model.t("awakeCustomDuration"), value: customDurationMinutesBinding, format: .number)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 90)
-                }
-            } else if defaultDurationPreset == .untilDate {
-                DatePicker(
-                    model.t("awakeUntilDate"),
-                    selection: untilDateBinding,
-                    in: Date()...,
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-            }
-
-            sectionLabel(model.t("awakeDisplaySection"))
-            Toggle(model.t("awakeDisplaySleepAllowed"), isOn: displaySleepAllowedBinding)
-                .toggleStyle(.switch)
-            Text(model.t("awakeDisplaySleepHint"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Toggle(model.t("awakeAllowSystemSleepWhenDisplayOff"), isOn: allowSystemSleepWhenDisplayOffBinding)
-                .toggleStyle(.switch)
-
-            Toggle(model.t("awakeClosedLidSleep"), isOn: closedLidSleepBinding)
-                .toggleStyle(.switch)
-            Text(model.t("awakeClosedLidSleepHint"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            AwakeSessionOptionsView(configuration: sessionConfigurationBinding)
             if awake.settings.defaultPolicy.preventClosedLidSleep {
-                Text(model.t("awakeClosedLidSleepWarning"))
-                    .font(.caption)
-                    .foregroundStyle(.orange)
                 closedLidServiceStatus
-            }
-
-            sectionLabel(model.t("awakeScreenSaver"))
-            Toggle(model.t("awakeBlockScreenSaver"), isOn: blockScreenSaverBinding)
-                .toggleStyle(.switch)
-            if awake.settings.defaultPolicy.blockScreenSaver {
-                SettingsSlider(
-                    value: screenSaverIdleBinding,
-                    in: 5...180,
-                    step: 5,
-                    label: model.t("awakeScreenSaverAllowsAfter", awake.settings.defaultPolicy.screenSaverIdleMinutes),
-                    format: { model.t("awakeScreenSaverAllowsAfter", Int($0.rounded())) }
-                )
-                Text(model.t("awakeScreenSaverAllowsAfter", awake.settings.defaultPolicy.screenSaverIdleMinutes))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(model.t("awakeScreenSaverAccessibilityHint"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -376,90 +313,15 @@ struct AwakeSettingsView: View {
         }
     }
 
-    private var displaySleepAllowedBinding: Binding<Bool> {
+    private var sessionConfigurationBinding: Binding<AwakeSessionProfileConfiguration> {
         Binding(
-            get: { !awake.settings.defaultPolicy.preventDisplaySleep },
-            set: { value in
-                awake.updateSettings { $0.defaultPolicy.preventDisplaySleep = !value }
+            get: { AwakeSessionProfileConfiguration.capture(from: awake.settings) },
+            set: { configuration in
+                awake.updateSettings { configuration.applySessionSettings(to: &$0) }
             }
         )
     }
 
-    private var defaultDurationPreset: AwakeDefaultDurationPreset {
-        if awake.settings.defaultSession.usesUntilDate { return .untilDate }
-        switch awake.settings.defaultSession.durationMinutes {
-        case 0: return .unlimited
-        case 30: return .thirtyMinutes
-        case 60: return .oneHour
-        case 120: return .twoHours
-        case 240: return .fourHours
-        default: return .customDuration
-        }
-    }
-
-    private var defaultDurationBinding: Binding<AwakeDefaultDurationPreset> {
-        Binding(
-            get: { defaultDurationPreset },
-            set: { preset in
-                awake.updateSettings { settings in
-                    settings.defaultSession.usesUntilDate = preset == .untilDate
-                    if preset == .untilDate {
-                        // 切换预设时补一个未过期的默认日期，避免隐性落到手动结束
-                        let fallback = Date().addingTimeInterval(60 * 60)
-                        let existing = settings.defaultSession.untilDate ?? fallback
-                        settings.defaultSession.untilDate = max(existing, Date().addingTimeInterval(60))
-                    }
-                    if preset != .untilDate, let minutes = preset.minutes {
-                        settings.defaultSession.durationMinutes = minutes
-                    }
-                }
-            }
-        )
-    }
-
-    private var untilDateBinding: Binding<Date> {
-        Binding(
-            get: {
-                max(
-                    awake.settings.defaultSession.untilDate ?? Date().addingTimeInterval(60 * 60),
-                    Date()
-                )
-            },
-            set: { value in
-                awake.updateSettings { $0.defaultSession.untilDate = value }
-            }
-        )
-    }
-
-    private var customDurationMinutesBinding: Binding<Int> {
-        Binding(
-            get: { max(1, awake.settings.defaultSession.durationMinutes) },
-            set: { value in
-                awake.updateSettings { $0.defaultSession.durationMinutes = max(1, value) }
-            }
-        )
-    }
-
-    private var allowSystemSleepWhenDisplayOffBinding: Binding<Bool> {
-        Binding(
-            get: { awake.settings.defaultPolicy.allowSystemSleepWhenDisplayOff },
-            set: { value in
-                awake.updateSettings { $0.defaultPolicy.allowSystemSleepWhenDisplayOff = value }
-            }
-        )
-    }
-
-    private var closedLidSleepBinding: Binding<Bool> {
-        Binding(
-            get: { awake.settings.defaultPolicy.preventClosedLidSleep },
-            set: { value in
-                awake.updateSettings { $0.defaultPolicy.setPreventClosedLidSleep(value) }
-            }
-        )
-    }
-
-    /// Status of the privileged background power service. The user never sees
-    /// `pmset`, `root`, `XPC`, or `LaunchDaemon` here.
     @ViewBuilder
     private var closedLidServiceStatus: some View {
         switch awake.closedLidServiceState {
@@ -504,24 +366,6 @@ struct AwakeSettingsView: View {
         )
     }
 
-    private var blockScreenSaverBinding: Binding<Bool> {
-        Binding(
-            get: { awake.settings.defaultPolicy.blockScreenSaver },
-            set: { value in
-                awake.updateSettings { $0.defaultPolicy.blockScreenSaver = value }
-            }
-        )
-    }
-
-    private var screenSaverIdleBinding: Binding<Double> {
-        Binding(
-            get: { Double(awake.settings.defaultPolicy.screenSaverIdleMinutes) },
-            set: { value in
-                awake.updateSettings { $0.defaultPolicy.screenSaverIdleMinutes = Int(value.rounded()) }
-            }
-        )
-    }
-
     private var batteryDescription: String {
         guard let level = awake.powerState.batteryLevelPercentage else { return model.t("awakeUnknown") }
         return model.t("awakeBatteryValue", level)
@@ -551,6 +395,33 @@ struct AwakeSessionProtectionDraft {
     var autoStartOnWake = false
     var launchProfileEnabled = false
     var launchProfileID: UUID?
+
+    init() {}
+
+    init(configuration: AwakeSessionProfileConfiguration) {
+        endOnForcedSleep = configuration.endOnForcedSleep
+        safetyPolicy.lowBatteryProtectionEnabled = configuration.lowBatteryProtectionEnabled
+        safetyPolicy.minimumBatteryLevel = configuration.minimumBatteryLevel
+        warnBeforeBatteryTermination = configuration.warnBeforeBatteryTermination
+        ignoreBatteryLevelOnExternalPower = configuration.ignoreBatteryLevelOnExternalPower
+        restartOnPowerReconnect = configuration.restartOnPowerReconnect
+        autoStartOnLaunch = configuration.autoStartOnLaunch
+        autoStartOnWake = configuration.autoStartOnWake
+    }
+
+    func applying(to configuration: AwakeSessionProfileConfiguration) -> AwakeSessionProfileConfiguration {
+        var result = configuration
+        result.endOnForcedSleep = endOnForcedSleep
+        result.lowBatteryProtectionEnabled = safetyPolicy.lowBatteryProtectionEnabled
+        result.minimumBatteryLevel = safetyPolicy.minimumBatteryLevel
+        result.warnBeforeBatteryTermination = warnBeforeBatteryTermination
+        result.ignoreBatteryLevelOnExternalPower = ignoreBatteryLevelOnExternalPower
+        result.restartOnPowerReconnect = restartOnPowerReconnect
+        result.autoStartOnLaunch = autoStartOnLaunch
+        result.autoStartOnWake = autoStartOnWake
+        return result
+    }
+
 }
 
 private struct AwakeSessionProtectionSheet: View {
@@ -579,13 +450,7 @@ private struct AwakeSessionProtectionSheet: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    forceSleepSection
-                    Divider()
-                    batteryProtectionSection
-                    Divider()
-                    powerAdapterSection
-                    Divider()
-                    autoStartSection
+                    AwakeSessionProtectionOptionsView(draft: $draft)
                 }
                 .padding(24)
             }
@@ -619,177 +484,8 @@ private struct AwakeSessionProtectionSheet: View {
         }
     }
 
-    /// 强制睡眠在第二步选择，每次打开都回到默认的关闭状态。
-    private var forceSleepSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(model.t("awakeForceSleep"))
-            Toggle(model.t("awakeEndOnForcedSleep"), isOn: endOnForcedSleepBinding)
-                .toggleStyle(.switch)
-        }
-    }
-
-    private var batteryProtectionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(model.t("awakeBatteryProtection"))
-            Toggle(
-                model.t("awakeEndSessionBelowBattery", draft.safetyPolicy.minimumBatteryLevel),
-                isOn: batteryProtectionBinding
-            )
-            .toggleStyle(.switch)
-
-            if draft.safetyPolicy.lowBatteryProtectionEnabled {
-                HStack(spacing: 12) {
-                    SettingsSlider(
-                        value: batteryThresholdBinding,
-                        in: 10...50,
-                        step: 1,
-                        label: model.t("awakeEndSessionBelowBattery", draft.safetyPolicy.minimumBatteryLevel),
-                        format: { model.t("awakeBatteryValue", Int($0.rounded())) }
-                    )
-                    Text("\(draft.safetyPolicy.minimumBatteryLevel)%")
-                        .monospacedDigit()
-                        .frame(width: 44, alignment: .trailing)
-                }
-                Toggle(model.t("awakeWarnBeforeBatteryEnd"), isOn: warnBeforeBatteryEndBinding)
-                    .toggleStyle(.switch)
-                Text(model.t("awakeBatteryProtectionHint"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var powerAdapterSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(model.t("awakePowerAdapterSection"))
-            Toggle(model.t("awakeIgnoreBatteryOnPower"), isOn: ignoreBatteryOnPowerBinding)
-                .toggleStyle(.switch)
-            Toggle(model.t("awakeRestartOnPowerReconnect"), isOn: restartOnPowerReconnectBinding)
-                .toggleStyle(.switch)
-            if draft.restartOnPowerReconnect {
-                Text(model.t("awakeRestartUsesDefaultDuration"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var autoStartSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(model.t("awakeAutoStart"))
-            Toggle(model.t("awakeAutoStartOnLaunch"), isOn: autoStartOnLaunchBinding)
-                .toggleStyle(.switch)
-            Toggle(model.t("awakeAutoStartOnWake"), isOn: autoStartOnWakeBinding)
-                .toggleStyle(.switch)
-            Toggle(model.t("awakeLaunchProfileEnabled"), isOn: launchProfileEnabledBinding)
-                .toggleStyle(.switch)
-            if draft.launchProfileEnabled {
-                Picker(model.t("awakeLaunchProfilePicker"), selection: launchProfileIDBinding) {
-                    ForEach(profiles.profiles) { profile in
-                        Text(profile.name).tag(Optional(profile.id))
-                    }
-                }
-                if let selectedID = draft.launchProfileID, profiles.profile(id: selectedID) == nil {
-                    Text(model.t("awakeLaunchProfileMissing"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if profiles.profiles.isEmpty {
-                    Text(model.t("awakeProfilesEmpty"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline)
-            .fontWeight(.semibold)
-            .padding(.top, 2)
-    }
-
-    /// 「保存方案」用的完整配置：第一步取全局当前值，第二步用本弹窗里
-    /// 确认前的草稿值覆盖保护选项——保存的就是屏幕上看到的这套配置。
     private func draftConfiguration() -> AwakeSessionProfileConfiguration {
-        var configuration = AwakeSessionProfileConfiguration.capture(from: awake.settings)
-        configuration.endOnForcedSleep = draft.endOnForcedSleep
-        configuration.lowBatteryProtectionEnabled = draft.safetyPolicy.lowBatteryProtectionEnabled
-        configuration.minimumBatteryLevel = draft.safetyPolicy.minimumBatteryLevel
-        configuration.warnBeforeBatteryTermination = draft.warnBeforeBatteryTermination
-        configuration.ignoreBatteryLevelOnExternalPower = draft.ignoreBatteryLevelOnExternalPower
-        configuration.restartOnPowerReconnect = draft.restartOnPowerReconnect
-        return configuration
-    }
-
-    private var endOnForcedSleepBinding: Binding<Bool> {
-        Binding(
-            get: { draft.endOnForcedSleep },
-            set: { draft.endOnForcedSleep = $0 }
-        )
-    }
-
-    private var batteryProtectionBinding: Binding<Bool> {
-        Binding(
-            get: { draft.safetyPolicy.lowBatteryProtectionEnabled },
-            set: { draft.safetyPolicy.lowBatteryProtectionEnabled = $0 }
-        )
-    }
-
-    private var batteryThresholdBinding: Binding<Double> {
-        Binding(
-            get: { Double(draft.safetyPolicy.minimumBatteryLevel) },
-            set: { draft.safetyPolicy.minimumBatteryLevel = Int($0.rounded()) }
-        )
-    }
-
-    private var warnBeforeBatteryEndBinding: Binding<Bool> {
-        Binding(
-            get: { draft.warnBeforeBatteryTermination },
-            set: { draft.warnBeforeBatteryTermination = $0 }
-        )
-    }
-
-    private var ignoreBatteryOnPowerBinding: Binding<Bool> {
-        Binding(
-            get: { draft.ignoreBatteryLevelOnExternalPower },
-            set: { draft.ignoreBatteryLevelOnExternalPower = $0 }
-        )
-    }
-
-    private var restartOnPowerReconnectBinding: Binding<Bool> {
-        Binding(
-            get: { draft.restartOnPowerReconnect },
-            set: { draft.restartOnPowerReconnect = $0 }
-        )
-    }
-
-    private var autoStartOnLaunchBinding: Binding<Bool> {
-        Binding(
-            get: { draft.autoStartOnLaunch },
-            set: { draft.autoStartOnLaunch = $0 }
-        )
-    }
-
-    private var autoStartOnWakeBinding: Binding<Bool> {
-        Binding(
-            get: { draft.autoStartOnWake },
-            set: { draft.autoStartOnWake = $0 }
-        )
-    }
-
-    private var launchProfileEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { draft.launchProfileEnabled },
-            set: { draft.launchProfileEnabled = $0 }
-        )
-    }
-
-    private var launchProfileIDBinding: Binding<UUID?> {
-        Binding(
-            get: { draft.launchProfileID },
-            set: { draft.launchProfileID = $0 }
-        )
+        draft.applying(to: AwakeSessionProfileConfiguration.capture(from: awake.settings))
     }
 
     private func confirm() {
@@ -810,12 +506,9 @@ private struct AwakeSessionProtectionSheet: View {
             settings.defaultSession.restartOnPowerReconnect = selected.restartOnPowerReconnect
             settings.defaultSession.autoStartOnLaunch = selected.autoStartOnLaunch
             settings.defaultSession.autoStartOnWake = selected.autoStartOnWake
-            settings.defaultSession.launchProfileEnabled = selected.launchProfileEnabled
-            settings.defaultSession.launchProfileID = selected.launchProfileID
-            // 启用了方案自启动但还没选方案时，回退到第一个方案，避免静默失效。
-            if selected.launchProfileEnabled, selected.launchProfileID == nil {
-                settings.defaultSession.launchProfileID = profiles.profiles.first?.id
-            }
+            // 本会话的自动开启不再间接指向另一个方案；保留历史存储键。
+            settings.defaultSession.launchProfileEnabled = false
+            settings.defaultSession.launchProfileID = nil
         }
         _ = awake.startDefaultSession()
         dismiss()
@@ -962,37 +655,281 @@ private struct AwakeProfileSaveSheet: View {
 
 /// 方案时长预设。方案不提供「直到指定时间」：绝对日期保存后必然过期，
 /// 保存流程会把剩余时间折算成分钟。
-private enum AwakeProfileDurationPreset: String, CaseIterable, Identifiable {
-    case unlimited
-    case thirtyMinutes
-    case oneHour
-    case twoHours
-    case fourHours
-    case customDuration
+/// 所有创建和编辑入口共用的第一步会话选项。
+private struct AwakeSessionOptionsView: View {
+    @EnvironmentObject private var model: MacPilotModel
+    @Binding var configuration: AwakeSessionProfileConfiguration
 
-    var id: String { rawValue }
+    var body: some View {
+        Picker(model.t("awakeSessionDuration"), selection: durationPresetBinding) {
+            Text(model.t("awakeUnlimited")).tag(AwakeDefaultDurationPreset.unlimited)
+            Text(model.t("awake30Minutes")).tag(AwakeDefaultDurationPreset.thirtyMinutes)
+            Text(model.t("awakeOneHour")).tag(AwakeDefaultDurationPreset.oneHour)
+            Text(model.t("awakeTwoHours")).tag(AwakeDefaultDurationPreset.twoHours)
+            Text(model.t("awakeFourHours")).tag(AwakeDefaultDurationPreset.fourHours)
+            Text(model.t("awakeCustomDuration")).tag(AwakeDefaultDurationPreset.customDuration)
+            Text(model.t("awakeUntilDate")).tag(AwakeDefaultDurationPreset.untilDate)
+        }
 
-    var minutes: Int? {
-        switch self {
-        case .unlimited: 0
-        case .thirtyMinutes: 30
-        case .oneHour: 60
-        case .twoHours: 120
-        case .fourHours: 240
-        case .customDuration: nil
+        if durationPreset == .customDuration {
+            HStack {
+                Text(model.t("awakeCustomDuration"))
+                Spacer()
+                TextField(model.t("awakeCustomDuration"), value: customDurationMinutesBinding, format: .number)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 90)
+            }
+        } else if durationPreset == .untilDate {
+            DatePicker(
+                model.t("awakeUntilDate"),
+                selection: untilDateBinding,
+                in: Date()...,
+                displayedComponents: [.date, .hourAndMinute]
+            )
+        }
+
+        sectionLabel(model.t("awakeDisplaySection"))
+        Toggle(model.t("awakeDisplaySleepAllowed"), isOn: displaySleepAllowedBinding)
+            .toggleStyle(.switch)
+        Text(model.t("awakeDisplaySleepHint"))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        Toggle(model.t("awakeAllowSystemSleepWhenDisplayOff"), isOn: $configuration.allowSystemSleepWhenDisplayOff)
+            .toggleStyle(.switch)
+
+        Toggle(model.t("awakeClosedLidSleep"), isOn: $configuration.preventClosedLidSleep)
+            .toggleStyle(.switch)
+        Text(model.t("awakeClosedLidSleepHint"))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        if configuration.preventClosedLidSleep {
+            Text(model.t("awakeClosedLidSleepWarning"))
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+
+        sectionLabel(model.t("awakeScreenSaver"))
+        Toggle(model.t("awakeBlockScreenSaver"), isOn: $configuration.blockScreenSaver)
+            .toggleStyle(.switch)
+        if configuration.blockScreenSaver {
+            SettingsSlider(
+                value: screenSaverIdleBinding,
+                in: 5...180,
+                step: 5,
+                label: model.t("awakeScreenSaverAllowsAfter", configuration.screenSaverIdleMinutes),
+                format: { model.t("awakeScreenSaverAllowsAfter", Int($0.rounded())) }
+            )
+            Text(model.t("awakeScreenSaverAllowsAfter", configuration.screenSaverIdleMinutes))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(model.t("awakeScreenSaverAccessibilityHint"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+    }
+
+    private var durationPreset: AwakeDefaultDurationPreset {
+        if configuration.untilDate != nil { return .untilDate }
+        switch configuration.durationMinutes {
+        case 0: return .unlimited
+        case 30: return .thirtyMinutes
+        case 60: return .oneHour
+        case 120: return .twoHours
+        case 240: return .fourHours
+        default: return .customDuration
         }
     }
 
-    static func matching(minutes: Int) -> Self {
-        switch minutes {
-        case 0: .unlimited
-        case 30: .thirtyMinutes
-        case 60: .oneHour
-        case 120: .twoHours
-        case 240: .fourHours
-        default: .customDuration
+    private var durationPresetBinding: Binding<AwakeDefaultDurationPreset> {
+        Binding(
+            get: { durationPreset },
+            set: { preset in
+                if preset == .untilDate {
+                    configuration.untilDate = max(configuration.untilDate ?? Date().addingTimeInterval(3600), Date().addingTimeInterval(60))
+                } else {
+                    configuration.untilDate = nil
+                    if let minutes = preset.minutes { configuration.durationMinutes = minutes }
+                }
+            }
+        )
+    }
+
+    private var untilDateBinding: Binding<Date> {
+        Binding(
+            get: { configuration.untilDate ?? Date().addingTimeInterval(3600) },
+            set: { configuration.untilDate = $0 }
+        )
+    }
+
+    private var customDurationMinutesBinding: Binding<Int> {
+        Binding(
+            get: { max(1, configuration.durationMinutes) },
+            set: { configuration.durationMinutes = max(1, $0) }
+        )
+    }
+
+    private var displaySleepAllowedBinding: Binding<Bool> {
+        Binding(
+            get: { !configuration.preventDisplaySleep },
+            set: { configuration.preventDisplaySleep = !$0 }
+        )
+    }
+
+    private var screenSaverIdleBinding: Binding<Double> {
+        Binding(
+            get: { Double(configuration.screenSaverIdleMinutes) },
+            set: { configuration.screenSaverIdleMinutes = Int($0.rounded()) }
+        )
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title).font(.subheadline).fontWeight(.semibold).padding(.top, 2)
+    }
+}
+
+private struct AwakeSessionProtectionOptionsView: View {
+    @EnvironmentObject private var model: MacPilotModel
+    @Binding var draft: AwakeSessionProtectionDraft
+
+    var body: some View {
+        forceSleepSection
+        Divider()
+        batteryProtectionSection
+        Divider()
+        powerAdapterSection
+        Divider()
+        autoStartSection
+    }
+
+    /// 创建会话和编辑方案共用的保护选项。
+    private var forceSleepSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(model.t("awakeForceSleep"))
+            Toggle(model.t("awakeEndOnForcedSleep"), isOn: endOnForcedSleepBinding)
+                .toggleStyle(.switch)
         }
     }
+
+    private var batteryProtectionSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(model.t("awakeBatteryProtection"))
+            Toggle(
+                model.t("awakeEndSessionBelowBattery", draft.safetyPolicy.minimumBatteryLevel),
+                isOn: batteryProtectionBinding
+            )
+            .toggleStyle(.switch)
+
+            if draft.safetyPolicy.lowBatteryProtectionEnabled {
+                HStack(spacing: 12) {
+                    SettingsSlider(
+                        value: batteryThresholdBinding,
+                        in: 10...50,
+                        step: 1,
+                        label: model.t("awakeEndSessionBelowBattery", draft.safetyPolicy.minimumBatteryLevel),
+                        format: { model.t("awakeBatteryValue", Int($0.rounded())) }
+                    )
+                    Text("\(draft.safetyPolicy.minimumBatteryLevel)%")
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+                Toggle(model.t("awakeWarnBeforeBatteryEnd"), isOn: warnBeforeBatteryEndBinding)
+                    .toggleStyle(.switch)
+                Text(model.t("awakeBatteryProtectionHint"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var powerAdapterSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(model.t("awakePowerAdapterSection"))
+            Toggle(model.t("awakeIgnoreBatteryOnPower"), isOn: ignoreBatteryOnPowerBinding)
+                .toggleStyle(.switch)
+            Toggle(model.t("awakeRestartOnPowerReconnect"), isOn: restartOnPowerReconnectBinding)
+                .toggleStyle(.switch)
+            if draft.restartOnPowerReconnect {
+                Text(model.t("awakeRestartUsesDefaultDuration"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var autoStartSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(model.t("awakeAutoStart"))
+            Toggle(model.t("awakeAutoStartOnLaunch"), isOn: autoStartOnLaunchBinding)
+                .toggleStyle(.switch)
+            Toggle(model.t("awakeAutoStartOnWake"), isOn: autoStartOnWakeBinding)
+                .toggleStyle(.switch)
+        }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .padding(.top, 2)
+    }
+
+    private var endOnForcedSleepBinding: Binding<Bool> {
+        Binding(
+            get: { draft.endOnForcedSleep },
+            set: { draft.endOnForcedSleep = $0 }
+        )
+    }
+
+    private var batteryProtectionBinding: Binding<Bool> {
+        Binding(
+            get: { draft.safetyPolicy.lowBatteryProtectionEnabled },
+            set: { draft.safetyPolicy.lowBatteryProtectionEnabled = $0 }
+        )
+    }
+
+    private var batteryThresholdBinding: Binding<Double> {
+        Binding(
+            get: { Double(draft.safetyPolicy.minimumBatteryLevel) },
+            set: { draft.safetyPolicy.minimumBatteryLevel = Int($0.rounded()) }
+        )
+    }
+
+    private var warnBeforeBatteryEndBinding: Binding<Bool> {
+        Binding(
+            get: { draft.warnBeforeBatteryTermination },
+            set: { draft.warnBeforeBatteryTermination = $0 }
+        )
+    }
+
+    private var ignoreBatteryOnPowerBinding: Binding<Bool> {
+        Binding(
+            get: { draft.ignoreBatteryLevelOnExternalPower },
+            set: { draft.ignoreBatteryLevelOnExternalPower = $0 }
+        )
+    }
+
+    private var restartOnPowerReconnectBinding: Binding<Bool> {
+        Binding(
+            get: { draft.restartOnPowerReconnect },
+            set: { draft.restartOnPowerReconnect = $0 }
+        )
+    }
+
+    private var autoStartOnLaunchBinding: Binding<Bool> {
+        Binding(
+            get: { draft.autoStartOnLaunch },
+            set: { draft.autoStartOnLaunch = $0 }
+        )
+    }
+
+    private var autoStartOnWakeBinding: Binding<Bool> {
+        Binding(
+            get: { draft.autoStartOnWake },
+            set: { draft.autoStartOnWake = $0 }
+        )
+    }
+
 }
 
 /// 编辑 / 新建方案弹窗：完整可编辑的业务配置草稿，保存即更新方案本身，
@@ -1041,75 +978,9 @@ private struct AwakeProfileEditorSheet: View {
 
                     Divider()
 
-                    Picker(model.t("awakeSessionDuration"), selection: durationPresetBinding) {
-                        Text(model.t("awakeUnlimited")).tag(AwakeProfileDurationPreset.unlimited)
-                        Text(model.t("awake30Minutes")).tag(AwakeProfileDurationPreset.thirtyMinutes)
-                        Text(model.t("awakeOneHour")).tag(AwakeProfileDurationPreset.oneHour)
-                        Text(model.t("awakeTwoHours")).tag(AwakeProfileDurationPreset.twoHours)
-                        Text(model.t("awakeFourHours")).tag(AwakeProfileDurationPreset.fourHours)
-                        Text(model.t("awakeCustomDuration")).tag(AwakeProfileDurationPreset.customDuration)
-                    }
-
-                    if durationPreset == .customDuration {
-                        HStack {
-                            Text(model.t("awakeCustomDuration"))
-                            Spacer()
-                            TextField(model.t("awakeCustomDuration"), value: customDurationMinutesBinding, format: .number)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 90)
-                        }
-                    }
-
-                    sectionLabel(model.t("awakeForceSleep"))
-                    Toggle(model.t("awakeEndOnForcedSleep"), isOn: $configuration.endOnForcedSleep)
-                        .toggleStyle(.switch)
-
-                    sectionLabel(model.t("awakeDisplaySection"))
-                    Toggle(model.t("awakeDisplaySleepAllowed"), isOn: displaySleepAllowedBinding)
-                        .toggleStyle(.switch)
-                    Toggle(model.t("awakeAllowSystemSleepWhenDisplayOff"), isOn: $configuration.allowSystemSleepWhenDisplayOff)
-                        .toggleStyle(.switch)
-
-                    Toggle(model.t("awakeClosedLidSleep"), isOn: $configuration.preventClosedLidSleep)
-                        .toggleStyle(.switch)
-                    Text(model.t("awakeClosedLidSleepHint"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    sectionLabel(model.t("awakeScreenSaver"))
-                    Toggle(model.t("awakeBlockScreenSaver"), isOn: $configuration.blockScreenSaver)
-                        .toggleStyle(.switch)
-                    if configuration.blockScreenSaver {
-                        SettingsSlider(
-                            value: screenSaverIdleBinding,
-                            in: 5...180,
-                            step: 5,
-                            label: model.t("awakeScreenSaverAllowsAfter", configuration.screenSaverIdleMinutes)
-                        )
-                    }
-
-                    sectionLabel(model.t("awakeBatteryProtection"))
-                    Toggle(
-                        model.t("awakeEndSessionBelowBattery", configuration.minimumBatteryLevel),
-                        isOn: $configuration.lowBatteryProtectionEnabled
-                    )
-                    .toggleStyle(.switch)
-                    if configuration.lowBatteryProtectionEnabled {
-                        SettingsSlider(
-                            value: batteryThresholdBinding,
-                            in: 10...50,
-                            step: 1,
-                            label: model.t("awakeEndSessionBelowBattery", configuration.minimumBatteryLevel)
-                        )
-                        Toggle(model.t("awakeWarnBeforeBatteryEnd"), isOn: $configuration.warnBeforeBatteryTermination)
-                            .toggleStyle(.switch)
-                    }
-
-                    sectionLabel(model.t("awakePowerAdapterSection"))
-                    Toggle(model.t("awakeIgnoreBatteryOnPower"), isOn: $configuration.ignoreBatteryLevelOnExternalPower)
-                        .toggleStyle(.switch)
-                    Toggle(model.t("awakeRestartOnPowerReconnect"), isOn: $configuration.restartOnPowerReconnect)
-                        .toggleStyle(.switch)
+                    AwakeSessionOptionsView(configuration: $configuration)
+                    Divider()
+                    AwakeSessionProtectionOptionsView(draft: protectionDraftBinding)
                 }
                 .padding(24)
             }
@@ -1132,54 +1003,11 @@ private struct AwakeProfileEditorSheet: View {
         AwakeSessionProfile.normalizedName(name)
     }
 
-    private var durationPreset: AwakeProfileDurationPreset {
-        AwakeProfileDurationPreset.matching(minutes: configuration.durationMinutes)
-    }
-
-    private var durationPresetBinding: Binding<AwakeProfileDurationPreset> {
+    private var protectionDraftBinding: Binding<AwakeSessionProtectionDraft> {
         Binding(
-            get: { durationPreset },
-            set: { preset in
-                if let minutes = preset.minutes {
-                    configuration.durationMinutes = minutes
-                }
-            }
+            get: { AwakeSessionProtectionDraft(configuration: configuration) },
+            set: { configuration = $0.applying(to: configuration) }
         )
-    }
-
-    private var customDurationMinutesBinding: Binding<Int> {
-        Binding(
-            get: { max(1, configuration.durationMinutes) },
-            set: { configuration.durationMinutes = max(1, $0) }
-        )
-    }
-
-    private var displaySleepAllowedBinding: Binding<Bool> {
-        Binding(
-            get: { !configuration.preventDisplaySleep },
-            set: { configuration.preventDisplaySleep = !$0 }
-        )
-    }
-
-    private var screenSaverIdleBinding: Binding<Double> {
-        Binding(
-            get: { Double(configuration.screenSaverIdleMinutes) },
-            set: { configuration.screenSaverIdleMinutes = Int($0.rounded()) }
-        )
-    }
-
-    private var batteryThresholdBinding: Binding<Double> {
-        Binding(
-            get: { Double(configuration.minimumBatteryLevel) },
-            set: { configuration.minimumBatteryLevel = Int($0.rounded()) }
-        )
-    }
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline)
-            .fontWeight(.semibold)
-            .padding(.top, 2)
     }
 
     private func save() {

@@ -467,8 +467,8 @@ enum AppText {
         "awakeDefaultSession": "默认会话", "awakeDefaultSessionHint": "自动开启的会话会使用这里的默认时长设置。",
         "awakeSessionConfig": "Session 配置", "awakeSessionConfigHint": "这里是第 1 步：设置时长和保持唤醒行为。点击开始 Session 后，在第 2 步选择强制睡眠、电量保护、电源适配器和自动开启选项。",
         "awakeSessionProtectionTitle": "第 2 步：Session 保护", "awakeSessionProtectionHint": "选择强制睡眠、电量保护、电源适配器和自动开启选项，确认后才会开始 Session。每次打开都从默认值开始，不会记住上次的选择。", "awakeSessionProtectionConfirm": "确认并开始 Session",
-        "awakeDefaultDuration": "默认时长", "awakeAutoStartOnLaunch": "App 启动时自动开启默认会话",
-        "awakeAutoStartOnWake": "从睡眠唤醒时自动开启默认会话",
+        "awakeDefaultDuration": "默认时长", "awakeAutoStartOnLaunch": "启动 MacPilot 时自动开启",
+        "awakeAutoStartOnWake": "从睡眠唤醒时自动开启",
         "awakeForceSleep": "强制睡眠", "awakeEndOnForcedSleep": "Mac 强制睡眠时结束会话",
         "awakeDisplaySection": "显示器", "awakeAllowSystemSleepWhenDisplayOff": "当显示器关闭时允许系统睡眠",
         "awakeScreenSaver": "屏幕保护程序", "awakeBlockScreenSaver": "会话期间阻止屏幕保护程序", "awakeScreenSaverAllowsAfter": "闲置 %d 分钟后允许运行",
@@ -1543,8 +1543,8 @@ enum AppText {
             "awakeDefaultSession": "Default Session", "awakeDefaultSessionHint": "Sessions that start automatically use the default duration here.",
             "awakeSessionConfig": "Session Setup", "awakeSessionConfigHint": "Step 1 sets the duration and awake behavior. After you click Start a session, choose forced sleep, battery protection, power-adapter, and automatic-start options in Step 2.",
             "awakeSessionProtectionTitle": "Step 2: Session Protection", "awakeSessionProtectionHint": "Choose forced sleep, battery protection, power-adapter, and automatic-start options. The session starts only after you confirm. Options start from their defaults every time and never remember the last choice.", "awakeSessionProtectionConfirm": "Confirm and Start Session",
-            "awakeDefaultDuration": "Default duration", "awakeAutoStartOnLaunch": "Start the default session when the app launches",
-            "awakeAutoStartOnWake": "Start the default session when waking from sleep",
+            "awakeDefaultDuration": "Default duration", "awakeAutoStartOnLaunch": "Start automatically when MacPilot launches",
+            "awakeAutoStartOnWake": "Start automatically when waking from sleep",
             "awakeForceSleep": "Forced Sleep", "awakeEndOnForcedSleep": "End the session when the Mac is forced to sleep",
             "awakeDisplaySection": "Display", "awakeAllowSystemSleepWhenDisplayOff": "Allow system sleep when the display is off",
             "awakeScreenSaver": "Screen Saver", "awakeBlockScreenSaver": "Block the screen saver during sessions", "awakeScreenSaverAllowsAfter": "Allow it after %d idle minutes",
@@ -2447,6 +2447,7 @@ final class MacPilotModel: ObservableObject {
         windowSwitcher.persist = { [weak self] in self?.saveIfReady() }
         smoothScrolling.persist = { [weak self] in self?.saveIfReady() }
         clipboard.persist = { [weak self] in self?.saveIfReady() }
+        awake.profileStore = awakeProfiles
         awake.persist = { [weak self] in self?.saveIfReady() }
         awakeTriggers.persist = { [weak self] in self?.saveIfReady() }
         awakeProfiles.persist = { [weak self] in self?.saveIfReady() }
@@ -3264,8 +3265,10 @@ final class MacPilotModel: ObservableObject {
         windowSwitcher.applyLoadedSettings(configuration.windowSwitcher)
         smoothScrolling.applyLoadedSettings(configuration.smoothScrolling)
         clipboard.applyLoadedSettings(configuration.clipboard, activate: false)
-        awake.applyLoadedSettings(configuration.awake, activate: false)
+        var awakeSettings = configuration.awake
         awakeProfiles.load(configuration.awakeProfiles)
+        awakeProfiles.migrateLegacyAutomaticStart(in: &awakeSettings)
+        awake.applyLoadedSettings(awakeSettings, activate: false)
         awakeTriggers.applyLoadedTriggers(configuration.awakeTriggers, activate: false)
         remoteDeviceStore.applyLoadedSettings(configuration.remoteControl)
         dockGroups.applyLoadedSettings(configuration.dockGroups)
