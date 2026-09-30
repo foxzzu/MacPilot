@@ -3,6 +3,61 @@ import Foundation
 public enum FinderSyncRegistration {
     public static let extensionBundleIdentifier = "com.misswell.macpilot.finder-sync"
 
+    public static func withSuspendedElection(
+        wasEnabled: Bool,
+        execute: ([String]) throws -> Void,
+        restorationFailed: (Error) -> Void = { _ in },
+        operation: () throws -> Void
+    ) throws {
+        guard wasEnabled else {
+            try operation()
+            return
+        }
+        try execute(["-e", "ignore", "-i", extensionBundleIdentifier])
+        defer {
+            do {
+                try execute(["-e", "use", "-i", extensionBundleIdentifier])
+            } catch {
+                restorationFailed(error)
+            }
+        }
+        try operation()
+    }
+
+    public static func queryArguments(includeAllVersions: Bool = false) -> [String] {
+        var arguments = ["-m", "-v", "-p", "com.apple.FinderSync", "-i", extensionBundleIdentifier]
+        if includeAllVersions { arguments += ["-A", "-D"] }
+        return arguments
+    }
+
+    /// Used once after a missing startup heartbeat. A disabled system
+    /// extension stays disabled; stale versions are queried only for cleanup.
+    public static func recoverIfEnabled(
+        at applicationURL: URL,
+        execute: ([String]) throws -> String
+    ) throws -> Bool {
+        let election = try execute(queryArguments())
+        guard isElectedForUse(in: election) else { return false }
+        let inventory = try execute(queryArguments(includeAllVersions: true))
+        var restorationError: Error?
+        try withSuspendedElection(
+            wasEnabled: true,
+            execute: { _ = try execute($0) },
+            restorationFailed: { restorationError = $0 },
+            operation: {
+                for arguments in registrationArguments(
+                    for: applicationURL,
+                    registeredExtensionPaths: registeredExtensionPaths(in: inventory),
+                    restoreEnabledElection: false
+                ) {
+                    _ = try execute(arguments)
+                }
+            }
+        )
+        if let restorationError { throw restorationError }
+        return true
+    }
+
     public static func registeredExtensionPaths(in plugInKitOutput: String) -> [String] {
         var paths: [String] = []
         var seen = Set<String>()

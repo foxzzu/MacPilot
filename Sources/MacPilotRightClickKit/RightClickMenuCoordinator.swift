@@ -47,6 +47,10 @@ public final class RightClickMenuCoordinator {
     /// Set by `stop()`. The bootstrap body is deferred, so it must not re-arm the
     /// loops after a stop that already happened.
     private var isStopped = false
+    private var extensionRecoveryAttempted = false
+    /// The host can repair an enabled but unresponsive extension once per
+    /// activation. The Finder extension itself never runs registration tools.
+    public var recoverExtension: (@MainActor () async -> Void)?
 
     public var isRunning: Bool { configObserver != nil || bootstrapTask != nil }
     public var activeObserverCount: Int { (configObserver == nil ? 0 : 1) + (messager.isObserving ? 1 : 0) }
@@ -56,6 +60,7 @@ public final class RightClickMenuCoordinator {
     public func start() {
         guard configObserver == nil, bootstrapTask == nil else { return }
         isStopped = false
+        extensionRecoveryAttempted = false
         messager.startObserving()
         PermissionDiagnostics.record("coordinator.start")
         logger.info("RightClickMenuCoordinator.start() called")
@@ -168,6 +173,12 @@ public final class RightClickMenuCoordinator {
                     pluginRunning = false
                 } else {
                     logger.warning("Heartbeat timeout detected; waiting for the extension to request config again")
+                    if !extensionRecoveryAttempted, let recoverExtension {
+                        extensionRecoveryAttempted = true
+                        await recoverExtension()
+                        guard !Task.isCancelled, !isStopped else { return }
+                        configPublisher.publish(force: true)
+                    }
                 }
             }
         }

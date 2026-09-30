@@ -120,11 +120,8 @@ private func runPlugInKit(arguments: [String]) throws -> String {
     return output
 }
 
-private func finderSyncRegistrationOutput() -> String? {
-    try? runPlugInKit(arguments: [
-        "-m", "-v", "-p", "com.apple.FinderSync",
-        "-i", FinderSyncRegistration.extensionBundleIdentifier
-    ])
+private func finderSyncRegistrationOutput(includeAllVersions: Bool = false) -> String? {
+    try? runPlugInKit(arguments: FinderSyncRegistration.queryArguments(includeAllVersions: includeAllVersions))
 }
 
 private func finderSyncWasEnabled() -> Bool {
@@ -137,7 +134,7 @@ private func refreshFinderSyncRegistration(
     restoreEnabledElection: Bool,
     logURL: URL
 ) {
-    let registeredPaths = finderSyncRegistrationOutput()
+    let registeredPaths = finderSyncRegistrationOutput(includeAllVersions: true)
         .map(FinderSyncRegistration.registeredExtensionPaths(in:)) ?? []
     let commands = FinderSyncRegistration.registrationArguments(
         for: applicationURL,
@@ -177,64 +174,76 @@ private func install(_ arguments: UpdaterArguments) throws {
     let backupName = ".MacPilot-backup-\(token).app"
     let backup = parent.appendingPathComponent(backupName)
 
-    do {
-        try fileManager.copyItem(at: arguments.sourceApplication, to: incoming)
-        _ = try fileManager.replaceItemAt(
-            arguments.destinationApplication,
-            withItemAt: incoming,
-            backupItemName: backupName,
-            options: .withoutDeletingBackupItem
-        )
-        refreshFinderSyncRegistration(
-            at: arguments.destinationApplication,
-            restoreEnabledElection: finderSyncWasEnabled,
-            logURL: arguments.logURL
-        )
-        do {
-            try launch(arguments.destinationApplication, logURL: arguments.logURL)
-        } catch {
-            if fileManager.fileExists(atPath: backup.path) {
-                _ = try? fileManager.replaceItemAt(arguments.destinationApplication, withItemAt: backup)
+    try FinderSyncRegistration.withSuspendedElection(
+        wasEnabled: finderSyncWasEnabled,
+        execute: { command in
+            _ = try runPlugInKit(arguments: command)
+            appendLog("FinderSync election command succeeded: \(command.joined(separator: " "))", to: arguments.logURL)
+        },
+        restorationFailed: { error in
+            appendLog("FinderSync election restoration failed: \(error.localizedDescription)", to: arguments.logURL)
+        },
+        operation: {
+            do {
+                try fileManager.copyItem(at: arguments.sourceApplication, to: incoming)
+                _ = try fileManager.replaceItemAt(
+                    arguments.destinationApplication,
+                    withItemAt: incoming,
+                    backupItemName: backupName,
+                    options: .withoutDeletingBackupItem
+                )
                 refreshFinderSyncRegistration(
                     at: arguments.destinationApplication,
-                    restoreEnabledElection: finderSyncWasEnabled,
+                    restoreEnabledElection: false,
                     logURL: arguments.logURL
                 )
-                try? launch(arguments.destinationApplication, logURL: arguments.logURL)
+                do {
+                    try launch(arguments.destinationApplication, logURL: arguments.logURL)
+                } catch {
+                    if fileManager.fileExists(atPath: backup.path) {
+                        _ = try? fileManager.replaceItemAt(arguments.destinationApplication, withItemAt: backup)
+                        refreshFinderSyncRegistration(
+                            at: arguments.destinationApplication,
+                            restoreEnabledElection: false,
+                            logURL: arguments.logURL
+                        )
+                        try? launch(arguments.destinationApplication, logURL: arguments.logURL)
+                    }
+                    throw error
+                }
+                // "The process started" is not "the new version runs". When a success
+                // token path was supplied, keep the backup and record it: the
+                // relaunched app deletes the backup only after it has loaded its
+                // configuration and initialized. Without a token (older callers) the
+                // previous behaviour stands.
+                if let successTokenURL = arguments.successTokenURL {
+                    UpdateSuccessToken.write(
+                        to: successTokenURL,
+                        backupPath: backup.path,
+                        targetVersion: arguments.sourceApplication.path
+                    )
+                    appendLog(
+                        "Update installed; rollback bundle kept at \(backup.path)",
+                        to: arguments.logURL
+                    )
+                } else {
+                    try? fileManager.removeItem(at: backup)
+                    appendLog("Update installed at \(arguments.destinationApplication.path)", to: arguments.logURL)
+                }
+            } catch {
+                try? fileManager.removeItem(at: incoming)
+                if !fileManager.fileExists(atPath: arguments.destinationApplication.path),
+                   fileManager.fileExists(atPath: backup.path) {
+                    try? fileManager.moveItem(at: backup, to: arguments.destinationApplication)
+                }
+                appendLog("Update failed: \(error.localizedDescription)", to: arguments.logURL)
+                if fileManager.fileExists(atPath: arguments.destinationApplication.path) {
+                    try? launch(arguments.destinationApplication, logURL: arguments.logURL)
+                }
+                throw error
             }
-            throw error
         }
-        // "The process started" is not "the new version runs". When a success
-        // token path was supplied, keep the backup and record it: the
-        // relaunched app deletes the backup only after it has loaded its
-        // configuration and initialized. Without a token (older callers) the
-        // previous behaviour stands.
-        if let successTokenURL = arguments.successTokenURL {
-            UpdateSuccessToken.write(
-                to: successTokenURL,
-                backupPath: backup.path,
-                targetVersion: arguments.sourceApplication.path
-            )
-            appendLog(
-                "Update installed; rollback bundle kept at \(backup.path)",
-                to: arguments.logURL
-            )
-        } else {
-            try? fileManager.removeItem(at: backup)
-            appendLog("Update installed at \(arguments.destinationApplication.path)", to: arguments.logURL)
-        }
-    } catch {
-        try? fileManager.removeItem(at: incoming)
-        if !fileManager.fileExists(atPath: arguments.destinationApplication.path),
-           fileManager.fileExists(atPath: backup.path) {
-            try? fileManager.moveItem(at: backup, to: arguments.destinationApplication)
-        }
-        appendLog("Update failed: \(error.localizedDescription)", to: arguments.logURL)
-        if fileManager.fileExists(atPath: arguments.destinationApplication.path) {
-            try? launch(arguments.destinationApplication, logURL: arguments.logURL)
-        }
-        throw error
-    }
+    )
 }
 
 do {
