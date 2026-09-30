@@ -4,6 +4,27 @@ import Testing
 
 @MainActor
 struct BLEMonitoringRestorationTests {
+    @Test func absentSecondaryDoesNotResetAFreshPrimaryInAnyDeviceMode() {
+        let primary = UUID()
+        let secondary = UUID()
+        let model = BLEUnlockModel()
+        defer { model.shutdown() }
+        model.settings.isEnabled = true
+        model.settings.deviceRelation = .any
+        model.settings.unlockRSSI = BLEUnlockModel.unlockDisabled
+        model.settings.lockRSSI = BLEUnlockModel.lockDisabled
+        model.secondaryMonitoredUUID = secondary
+        model.startMonitor(primary)
+        model.updateMonitoredPeripheral(-50, for: primary)
+        let taskCount = model.diagnosticTaskCount
+
+        model.handleMonitoredSignalTimeout(for: secondary)
+
+        #expect(model.presence)
+        #expect(model.lastRSSI == -50)
+        #expect(model.diagnosticTaskCount == taskCount)
+    }
+
     @Test func activeRecoveryReconnectsKnownDevicesWithoutAnAdvertisement() {
         let known = UUID()
         let unknown = UUID()

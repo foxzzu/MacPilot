@@ -543,18 +543,26 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
         guard let runtime = runtime(for: uuid) else { return }
         runtime.signalTimer?.stop()
         runtime.signalTimer = BackgroundTask.once(after: TimeInterval(settings.signalTimeout)) { [weak self] in
-            guard let self, let runtime = self.runtime(for: uuid) else { return }
-            self.log("signal timeout fired uuid=\(uuid.uuidString) timeout=\(self.settings.signalTimeout) devicePresence=\(runtime.presence)")
-            runtime.signalTimer = nil
-            runtime.lastRSSI = nil
-            runtime.activeMode = false
-            if runtime.presence {
-                runtime.presence = false
-                self.recomputePresence(reason: "lost")
-            } else {
-                self.refreshPublishedMonitoringState()
-            }
-            self.startMonitoringRecovery(reason: "signalTimeout", restartImmediately: true)
+            self?.handleMonitoredSignalTimeout(for: uuid)
+        }
+    }
+
+    func handleMonitoredSignalTimeout(for uuid: UUID) {
+        guard let runtime = runtime(for: uuid) else { return }
+        log("signal timeout fired uuid=\(uuid.uuidString) timeout=\(settings.signalTimeout) devicePresence=\(runtime.presence)")
+        runtime.signalTimer = nil
+        runtime.lastRSSI = nil
+        runtime.activeMode = false
+        if runtime.presence {
+            runtime.presence = false
+            recomputePresence(reason: "lost")
+        } else {
+            refreshPublishedMonitoringState()
+        }
+        // In "any device" mode an absent secondary must not tear down
+        // the healthy primary's connection every signal-timeout interval.
+        if !monitoringHasFreshSignal {
+            startMonitoringRecovery(reason: "signalTimeout", restartImmediately: true)
         }
     }
 
@@ -565,7 +573,7 @@ final class BLEUnlockModel: NSObject, ObservableObject, ManagedFeature, FeatureR
         return Int(mean)
     }
 
-    private func updateMonitoredPeripheral(_ rssi: Int, for uuid: UUID) {
+    func updateMonitoredPeripheral(_ rssi: Int, for uuid: UUID) {
         guard let runtime = runtime(for: uuid) else { return }
         noteAdvertisementActivity()
         let unlockThreshold = settings.unlockRSSI == Self.unlockDisabled ? settings.lockRSSI : settings.unlockRSSI
