@@ -5448,21 +5448,20 @@ struct BLEUnlockView: View {
 
 /// 菜单栏「内存监控」子菜单：系统内存总览 + 占用前十的应用。
 /// 每次展开菜单时同步采样（带短缓存），底部入口跳转到监控页。
-private struct MemoryMonitorMenuSection: View {
+struct MemoryMonitorMenuSection: View {
     @EnvironmentObject private var model: MacPilotModel
-    let monitor: MemoryMonitorModel
-    @ObservedObject var store: MemoryStore
     let openMonitor: () -> Void
 
-    init(monitor: MemoryMonitorModel, openMonitor: @escaping () -> Void) {
-        self.monitor = monitor
-        self.store = monitor.store
-        self.openMonitor = openMonitor
+    // Native menu construction must have rows before appearance callbacks.
+    // The two-second cache coalesces repeated SwiftUI evaluations.
+    var snapshot: (apps: [AppMemoryUsage], system: SystemMemorySnapshot?) {
+        MemoryMonitorModel.menuSnapshot()
     }
 
     var body: some View {
+        let snapshot = snapshot
         Menu(model.t("memoryMonitor")) {
-            if let system = store.systemMemory {
+            if let system = snapshot.system {
                 Section(model.t("memoryOverview")) {
                     overviewRow(model.t("physicalMemory"), system.physicalBytes)
                     overviewRow(model.t("usedMemory"), system.usedBytes)
@@ -5478,7 +5477,7 @@ private struct MemoryMonitorMenuSection: View {
             }
             Divider()
             Section(model.t("memoryTopApps")) {
-                let topApps = store.apps.prefix(10)
+                let topApps = snapshot.apps.prefix(10)
                 if topApps.isEmpty {
                     Text(model.t("loadingProcesses"))
                 } else {
@@ -5490,11 +5489,6 @@ private struct MemoryMonitorMenuSection: View {
             Divider()
             Button(model.t("memoryMonitorOpen")) { openMonitor() }
         }
-        .onAppear {
-            if store.lastUpdated.map({ Date().timeIntervalSince($0) >= 2 }) ?? true {
-                monitor.refresh()
-            }
-        }
     }
 
     private func overviewRow(_ label: String, _ bytes: UInt64) -> some View {
@@ -5504,21 +5498,20 @@ private struct MemoryMonitorMenuSection: View {
 
 /// 菜单栏「CPU 监控」子菜单：系统 CPU 总览 + 占用前十的应用。
 /// 每次展开菜单时同步采样（带短缓存），底部入口跳转到监控页。
-private struct CPUMonitorMenuSection: View {
+struct CPUMonitorMenuSection: View {
     @EnvironmentObject private var model: MacPilotModel
-    let monitor: CPUMonitorModel
-    @ObservedObject var store: CPUStore
     let openMonitor: () -> Void
 
-    init(monitor: CPUMonitorModel, openMonitor: @escaping () -> Void) {
-        self.monitor = monitor
-        self.store = monitor.store
-        self.openMonitor = openMonitor
+    // Native menu construction must have rows before appearance callbacks.
+    // The two-second cache coalesces repeated SwiftUI evaluations.
+    var snapshot: (apps: [AppCPUUsage], system: SystemCPUSnapshot?) {
+        CPUMonitorModel.menuSnapshot()
     }
 
     var body: some View {
+        let snapshot = snapshot
         Menu(model.t("cpuMonitor")) {
-            if let system = store.systemCPU {
+            if let system = snapshot.system {
                 Section(model.t("cpuOverview")) {
                     overviewRow(model.t("cpuTotalUsage"), system.totalPercent)
                     overviewRow(model.t("cpuUserUsage"), system.userPercent)
@@ -5533,7 +5526,7 @@ private struct CPUMonitorMenuSection: View {
             }
             Divider()
             Section(model.t("cpuTopApps")) {
-                let topApps = store.apps.prefix(10)
+                let topApps = snapshot.apps.prefix(10)
                 if topApps.isEmpty {
                     Text(model.t("cpuWaitingForSample"))
                 } else {
@@ -5544,11 +5537,6 @@ private struct CPUMonitorMenuSection: View {
             }
             Divider()
             Button(model.t("cpuMonitorOpen")) { openMonitor() }
-        }
-        .onAppear {
-            if store.lastUpdated.map({ Date().timeIntervalSince($0) >= 2 }) ?? true {
-                monitor.refresh()
-            }
         }
     }
 
@@ -5661,14 +5649,14 @@ struct MenuBarView: View {
         }
         if model.isFeatureEnabled(.memoryMonitor) {
             Divider()
-            MemoryMonitorMenuSection(monitor: model.memoryMonitor) {
+            MemoryMonitorMenuSection {
                 model.requestSection(.memoryMonitor)
                 showMainWindow()
             }
         }
         if model.isFeatureEnabled(.cpuMonitor) {
             Divider()
-            CPUMonitorMenuSection(monitor: model.cpuMonitor) {
+            CPUMonitorMenuSection {
                 model.requestSection(.cpuMonitor)
                 showMainWindow()
             }
