@@ -1104,6 +1104,8 @@ struct AwakeMenuView: View {
             if awake.isActive {
                 Text(statusText)
                     .foregroundStyle(.secondary)
+                Text("\(model.t("awakeSystemSleep")): \(assertionStatus(active: awake.isSystemAssertionActive, desired: awake.desiredAwakeState.preventSystemSleep, kind: .systemSleep))")
+                Text("\(model.t("awakeDisplaySleep")): \(assertionStatus(active: awake.isDisplayAssertionActive, desired: awake.desiredAwakeState.preventDisplaySleep, kind: .displaySleep))")
                 if let expiryText {
                     Text(expiryText)
                         .foregroundStyle(.secondary)
@@ -1117,6 +1119,10 @@ struct AwakeMenuView: View {
                         }
                     }
                 }
+            }
+
+            if let failure = awake.lastAssertionFailure {
+                Text(model.t("awakeAssertionError", failure.code))
             }
 
             if !profiles.profiles.isEmpty {
@@ -1163,9 +1169,16 @@ struct AwakeMenuView: View {
         if awake.activeSessionCount == 1, let only = awake.activeSessions.first {
             // 方案会话直接显示方案名，让用户知道现在跑的是哪套配置。
             if case .profile(let name) = only.source { return name }
-            return model.t("awakeActive")
+            return model.t(awake.isKeepingAwake ? "awakeActive" : "awakeSessionRunning")
         }
         return model.t("awakeMultipleSessions", awake.activeSessionCount)
+    }
+
+    private func assertionStatus(active: Bool, desired: Bool, kind: AwakeAssertionFailure.Kind) -> String {
+        if awake.lastAssertionFailure?.kind == kind || (desired && !active) {
+            return model.t("awakeUnknown")
+        }
+        return model.t(active ? "awakePrevented" : "awakeAllowed")
     }
 
     private var expiryText: String? {

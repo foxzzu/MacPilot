@@ -19,6 +19,8 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
     // policy says manual sessions do not survive an app restart; wake and
     // clock-change notifications still re-evaluate sessions that remain live.
     @Published private(set) var sessions: [AwakeSession] = []
+    @Published private(set) var isSystemAssertionActive = false
+    @Published private(set) var isDisplayAssertionActive = false
     @Published private(set) var desiredAwakeState = DesiredAwakeState.inactive
     @Published private(set) var powerState = PowerState.unknown
     @Published private(set) var safetyProtectionActive = false
@@ -52,6 +54,7 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
     private var isDisplayAsleep = false
     private var warnedBatteryThreshold = false
     private var isShutdown = false
+    private let maintenanceInterval: TimeInterval
     /// Whether the aggregate closed-lid policy is currently requested, so the
     /// controller is only toggled on real transitions.
     private var closedLidSleepRequested = false
@@ -73,8 +76,10 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
         lidStateMonitor: (any LidStateMonitoring)? = nil,
         displayStateProvider: any AwakeDisplayStateProviding = DisplayStateProvider(),
         sleepDisplay: @escaping @MainActor () -> Void = DisplayPower.sleepDisplay,
-        wakeDisplay: @escaping () -> Void = DisplayPower.wakeDisplay
+        wakeDisplay: @escaping () -> Void = DisplayPower.wakeDisplay,
+        maintenanceInterval: TimeInterval = 60
     ) {
+        self.maintenanceInterval = max(0.25, maintenanceInterval)
         self.assertionController = assertionController
         self.powerStateProvider = powerStateProvider
         self.notifyBatteryWarning = notifyBatteryWarning
@@ -106,8 +111,8 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
         activeSessions.filter { $0.source.isInteractive }
     }
     var hasInteractiveSession: Bool { !activeInteractiveSessions.isEmpty }
-    var isSystemAssertionActive: Bool { assertionController.isSystemAssertionActive }
-    var isDisplayAssertionActive: Bool { assertionController.isDisplayAssertionActive }
+    var isKeepingAwake: Bool { isSystemAssertionActive || isDisplayAssertionActive || isClosedLidSleepActive }
+
     var sharedPowerStateProvider: any AwakePowerStateProviding { powerStateProvider }
 
     /// Ask the privileged helper to register, if it is not registered yet.
@@ -464,6 +469,7 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
         if case .failure(let failure) = assertionController.releaseAll() {
             lastAssertionFailure = failure
         }
+        syncAssertionState()
     }
 
     /// Removes every process-level observer this manager installed. Safe to call
@@ -575,27 +581,11 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
     }
 
     private func applyAssertions() {
-        let active = activeSessions
-        // Keeping the Mac awake with the lid closed only makes sense while the
-        // system itself is prevented from sleeping, so the closed-lid flag
-        // forces system-sleep prevention on.
-        let closedLidSleepPrevented = active.contains { $0.policy.preventClosedLidSleep }
-        // System sleep prevention is released while the display is off only
-        // when every session that prevents system sleep allows it, and never
-        // while the Mac must keep running with the lid closed.
-        let allAllowSleepWithDisplayOff = active
-            .filter { $0.policy.preventSystemSleep }
-            .allSatisfy { $0.policy.allowSystemSleepWhenDisplayOff }
-        let displayOffReleasesSystemSleep = isDisplayAsleep
-            && allAllowSleepWithDisplayOff
-            && !closedLidSleepPrevented
-        let desired = DesiredAwakeState(
-            preventSystemSleep: (active.contains { $0.policy.preventSystemSleep } || closedLidSleepPrevented)
-                && !displayOffReleasesSystemSleep,
-            preventDisplaySleep: active.contains { $0.policy.preventDisplaySleep },
-            preventClosedLidSleep: closedLidSleepPrevented
-        )
-        desiredAwakeState = desired
+        let desired = AwakePolicyEngine.desiredState(sessions: sessions, displayAsleep: isDisplayAsleep)
+        if desiredAwakeState != desired {
+            desiredAwakeState = desired
+            logger.notice("Awake policy changed: system=\(desired.preventSystemSleep, privacy: .public), display=\(desired.preventDisplaySleep, privacy: .public), closedLid=\(desired.preventClosedLidSleep, privacy: .public)")
+        }
         switch assertionController.apply(desired) {
         case .success:
             lastAssertionFailure = nil
@@ -603,7 +593,15 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
             lastAssertionFailure = failure
             logger.error("Assertion update failed: \(failure.localizedDescription, privacy: .public)")
         }
+        syncAssertionState()
         applyClosedLidSleep(desired.preventClosedLidSleep)
+    }
+
+    private func syncAssertionState() {
+        let systemActive = assertionController.isSystemAssertionActive
+        let displayActive = assertionController.isDisplayAssertionActive
+        if isSystemAssertionActive != systemActive { isSystemAssertionActive = systemActive }
+        if isDisplayAssertionActive != displayActive { isDisplayAssertionActive = displayActive }
     }
 
     // MARK: - Closed-lid sleep
@@ -677,32 +675,35 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
 
     private func scheduleMaintenance() {
         maintenanceTask?.cancel()
-        guard !activeSessions.isEmpty else {
+        guard !activeSessions.isEmpty || lastAssertionFailure != nil else {
             maintenanceTask = nil
             stopPowerMonitoring()
             return
         }
-        startPowerMonitoring()
+        if activeSessions.isEmpty { stopPowerMonitoring() } else { startPowerMonitoring() }
 
         maintenanceTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                guard let self else { return }
-                self.expireSessions(at: self.now())
-                self.applySafetyPolicy()
-                self.applyAssertions()
-                self.deferScreenSaverIfEnabled()
+                let delay: TimeInterval
+                // Drop the strong reference before sleeping, particularly for
+                // unlimited sessions whose maintenance task never expires.
+                do {
+                    guard let self else { return }
+                    self.expireSessions(at: self.now())
+                    self.applySafetyPolicy()
+                    self.applyAssertions()
+                    self.deferScreenSaverIfEnabled()
 
-                guard !self.activeSessions.isEmpty else {
-                    self.maintenanceTask = nil
-                    return
-                }
+                    if self.activeSessions.isEmpty { self.stopPowerMonitoring() }
+                    guard !self.activeSessions.isEmpty || self.lastAssertionFailure != nil else {
+                        self.maintenanceTask = nil
+                        return
+                    }
 
-                guard let nextExpiration = self.activeSessions.compactMap(\.expectedEndAt).min() else {
-                    self.maintenanceTask = nil
-                    return
+                    let expirationDelay = self.activeSessions.compactMap(\.expectedEndAt).min()
+                        .map { $0.timeIntervalSince(self.now()) } ?? self.maintenanceInterval
+                    delay = min(max(expirationDelay, 0.25), self.maintenanceInterval)
                 }
-                let expirationDelay = max(0.25, nextExpiration.timeIntervalSince(self.now()))
-                let delay = min(max(expirationDelay, 0.25), 60)
                 do {
                     try await Task.sleep(for: .seconds(delay))
                 } catch {
@@ -756,11 +757,7 @@ final class AwakeSessionManager: ObservableObject, ManagedFeature {
             logger.notice("Power adapter reconnected; starting default session")
             _ = startDefaultSession()
         }
-        if activeSessions.isEmpty {
-            maintenanceTask?.cancel()
-            maintenanceTask = nil
-            stopPowerMonitoring()
-        }
+        scheduleMaintenance()
     }
 
     private func installSystemObservers() {

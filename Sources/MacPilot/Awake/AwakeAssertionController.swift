@@ -29,6 +29,70 @@ protocol AwakeAssertionControlling: AnyObject {
     func releaseAll() -> Result<Void, AwakeAssertionFailure>
 }
 
+enum AwakeAssertionHealth: Equatable {
+    case active
+    case missing
+    case failed(IOReturn)
+}
+
+/// The IOKit boundary is injectable so recovery tests never change host power policy.
+@MainActor
+protocol AwakePowerAssertionAPI {
+    func create(type: String, reason: String) -> (code: IOReturn, id: IOPMAssertionID)
+    func ensureActive(_ id: IOPMAssertionID) -> AwakeAssertionHealth
+    func release(_ id: IOPMAssertionID) -> IOReturn
+}
+
+struct IOKitAwakePowerAssertionAPI: AwakePowerAssertionAPI {
+    private let copyProperties: (IOPMAssertionID) -> NSDictionary?
+    private let setLevelOn: (IOPMAssertionID) -> IOReturn
+
+    init(
+        copyProperties: @escaping (IOPMAssertionID) -> NSDictionary? = {
+            IOPMAssertionCopyProperties($0)?.takeRetainedValue() as NSDictionary?
+        },
+        setLevelOn: @escaping (IOPMAssertionID) -> IOReturn = {
+            IOPMAssertionSetProperty($0, kIOPMAssertionLevelKey as CFString, NSNumber(value: kIOPMAssertionLevelOn))
+        }
+    ) {
+        self.copyProperties = copyProperties
+        self.setLevelOn = setLevelOn
+    }
+
+    func create(type: String, reason: String) -> (code: IOReturn, id: IOPMAssertionID) {
+        var id = IOPMAssertionID()
+        let code = IOPMAssertionCreateWithName(
+            type as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), reason as CFString, &id
+        )
+        return (code, id)
+    }
+
+    func ensureActive(_ id: IOPMAssertionID) -> AwakeAssertionHealth {
+        if let properties = copyProperties(id) {
+            guard let level = properties[kIOPMAssertionLevelKey] as? NSNumber else {
+                return .failed(kIOReturnError)
+            }
+            if level.uint32Value == kIOPMAssertionLevelOn { return .active }
+        }
+        // CopyProperties returns nil for both a missing ID and a query failure.
+        // With these fixed valid level arguments, powerd's lookupAssertion
+        // returns BadArgument for an absent ID (observed on macOS 26), while
+        // the public contract specifies NotFound. Transport/permission failures
+        // retain the ID so a transient outage cannot duplicate it.
+        // https://github.com/apple-oss-distributions/PowerManagement/blob/main/pmconfigd/PMAssertions.c
+        let code = setLevelOn(id)
+        switch code {
+        case kIOReturnSuccess: return .active
+        case kIOReturnNotFound, kIOReturnBadArgument: return .missing
+        default: return .failed(code)
+        }
+    }
+
+    func release(_ id: IOPMAssertionID) -> IOReturn {
+        IOPMAssertionRelease(id)
+    }
+}
+
 /// Owns the process' two ordinary IOKit power assertions.
 ///
 /// The controller deliberately knows nothing about sessions. It only moves
@@ -38,21 +102,24 @@ protocol AwakeAssertionControlling: AnyObject {
 final class AwakeAssertionController: AwakeAssertionControlling {
     private let logger = Logger(subsystem: "com.misswell.macpilot", category: "Awake.Assertion")
     private let reason = "MacPilot Awake"
+    private let api: any AwakePowerAssertionAPI
     private var systemAssertionID: IOPMAssertionID?
     private var displayAssertionID: IOPMAssertionID?
 
-    var isSystemAssertionActive: Bool { systemAssertionID != nil }
-    var isDisplayAssertionActive: Bool { displayAssertionID != nil }
+    private(set) var isSystemAssertionActive = false
+    private(set) var isDisplayAssertionActive = false
+
+    init(api: any AwakePowerAssertionAPI = IOKitAwakePowerAssertionAPI()) {
+        self.api = api
+    }
 
     @discardableResult
     func apply(_ desiredState: DesiredAwakeState) -> Result<Void, AwakeAssertionFailure> {
-        var firstFailure: AwakeAssertionFailure?
-        if let failure = updateSystemAssertion(enabled: desiredState.preventSystemSleep) {
-            firstFailure = failure
-        }
-        if let failure = updateDisplayAssertion(enabled: desiredState.preventDisplaySleep) {
-            firstFailure = firstFailure ?? failure
-        }
+        let systemFailure = updateSystemAssertion(enabled: desiredState.preventSystemSleep)
+        let displayFailure = updateDisplayAssertion(enabled: desiredState.preventDisplaySleep)
+        let firstFailure = systemFailure ?? displayFailure
+        isSystemAssertionActive = systemAssertionID != nil && systemFailure == nil
+        isDisplayAssertionActive = displayAssertionID != nil && displayFailure == nil
         if let firstFailure { return .failure(firstFailure) }
         return .success(())
     }
@@ -60,6 +127,12 @@ final class AwakeAssertionController: AwakeAssertionControlling {
     @discardableResult
     func releaseAll() -> Result<Void, AwakeAssertionFailure> {
         apply(.inactive)
+    }
+
+    private func failure(kind: AwakeAssertionFailure.Kind, operation: String, code: IOReturn) -> AwakeAssertionFailure {
+        let failure = AwakeAssertionFailure(kind: kind, operation: operation, code: String(describing: code))
+        logger.error("\(failure.localizedDescription, privacy: .public)")
+        return failure
     }
 
     private func updateSystemAssertion(enabled: Bool) -> AwakeAssertionFailure? {
@@ -92,15 +165,18 @@ final class AwakeAssertionController: AwakeAssertionControlling {
         setID: (IOPMAssertionID?) -> Void
     ) -> AwakeAssertionFailure? {
         if enabled {
-            guard currentID == nil else { return nil }
+            if let currentID {
+                switch api.ensureActive(currentID) {
+                case .active: return nil
+                case .missing:
+                    setID(nil)
+                    logger.notice("Recovering missing \(kind.rawValue, privacy: .public) assertion")
+                case .failed(let code):
+                    return failure(kind: kind, operation: "Assertion health check failed", code: code)
+                }
+            }
 
-            var assertionID = IOPMAssertionID()
-            let result = IOPMAssertionCreateWithName(
-                assertionType as CFString,
-                IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                reason as CFString,
-                &assertionID
-            )
+            let (result, assertionID) = api.create(type: assertionType, reason: reason)
             guard result == kIOReturnSuccess else {
                 let failure = AwakeAssertionFailure(
                     kind: kind,
@@ -116,8 +192,10 @@ final class AwakeAssertionController: AwakeAssertionControlling {
         }
 
         guard let currentID else { return nil }
-        let result = IOPMAssertionRelease(currentID)
-        guard result == kIOReturnSuccess else {
+        let result = api.release(currentID)
+        // Release has no variable arguments except our previously created ID;
+        // BadArgument is powerd's absent-ID result, just as in ensureActive.
+        guard result == kIOReturnSuccess || result == kIOReturnNotFound || result == kIOReturnBadArgument else {
             let failure = AwakeAssertionFailure(
                 kind: kind,
                 operation: "IOPMAssertionRelease failed",

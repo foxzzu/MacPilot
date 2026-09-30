@@ -53,8 +53,9 @@ struct MacPilotApp: App {
 }
 
 enum MenuBarIcon {
-    static func systemImage(awakeActive: Bool, enforcing: Bool) -> String {
-        awakeActive ? "sun.max.fill" : (enforcing ? "timer" : "pause.circle")
+    static func systemImage(awakeActive: Bool, enforcing: Bool, awakeFailed: Bool = false) -> String {
+        if awakeFailed { return "exclamationmark.triangle" }
+        return awakeActive ? "sun.max.fill" : (enforcing ? "timer" : "pause.circle")
     }
 }
 
@@ -64,8 +65,9 @@ private struct MenuBarIconView: View {
 
     var body: some View {
         Image(systemName: MenuBarIcon.systemImage(
-            awakeActive: awake.isActive,
-            enforcing: model.isFeatureEnabled(.exit) && model.isEnforcing
+            awakeActive: awake.isKeepingAwake,
+            enforcing: model.isFeatureEnabled(.exit) && model.isEnforcing,
+            awakeFailed: awake.lastAssertionFailure != nil || awake.lastClosedLidFailure != nil
         ))
     }
 }
@@ -437,8 +439,8 @@ enum AppText {
         "loginError": "无法更新登录启动项：%@", "loginItemNeedsApproval": "macOS 正在等待你允许 MacPilot 登录时启动，请在“系统设置 → 通用 → 登录项与扩展”里打开它。", "aboutAutomation": "自动化", "manageRules": "管理应用规则和界面偏好。", "githubProject": "GitHub 项目", "githubProjectDescription": "在 GitHub 查看 MacPilot 的源代码、版本发布和问题反馈。", "githubProjectLink": "github.com/%@",
         "quitsIn": "将在 %d 分钟后退出",
         "awake": "保持唤醒", "awakeSubtitle": "控制 Mac 的睡眠行为，并根据需要保持系统运行。",
-        "awakeKeepAwake": "保持唤醒", "awakeStop": "停止保持唤醒", "awakeActive": "保持唤醒中",
-        "awakeMultipleSessions": "%d 个 Session 正在保持唤醒", "awakeOpenSettings": "打开 Awake 设置…",
+        "awakeKeepAwake": "保持唤醒", "awakeStop": "停止保持唤醒", "awakeActive": "保持唤醒中", "awakeSessionRunning": "会话运行中",
+        "awakeMultipleSessions": "%d 个 Session 正在运行", "awakeOpenSettings": "打开 Awake 设置…",
         "awakeDuration": "保持时长", "awake30Minutes": "30 分钟", "awakeOneHour": "1 小时", "awakeTwoHours": "2 小时", "awakeFourHours": "4 小时", "awakeUnlimited": "无限期",
         "awakeCustomDuration": "自定义时长", "awakeCustomDurationValue": "%d 分钟", "awakeUntilDate": "直到指定时间",
         "awakeStartSession": "开始 Session", "awakeSessionDuration": "Session 时长", "awakeDisplaySleepAllowed": "允许显示器休眠",
@@ -1513,8 +1515,8 @@ enum AppText {
             "loginError": "Couldn’t update the login item: %@", "loginItemNeedsApproval": "macOS is waiting for you to allow MacPilot to start at login. Turn it on in System Settings → General → Login Items & Extensions.", "aboutAutomation": "AUTOMATION", "manageRules": "Manage app rules and interface preferences.", "githubProject": "GitHub Project", "githubProjectDescription": "View MacPilot’s source code, releases, and issue tracker on GitHub.", "githubProjectLink": "github.com/%@",
             "quitsIn": "Quits in %d min",
             "awake": "Awake", "awakeSubtitle": "Control Mac sleep behavior and keep the system running when needed.",
-            "awakeKeepAwake": "Keep Awake", "awakeStop": "Stop Keeping Awake", "awakeActive": "Keeping Awake",
-            "awakeMultipleSessions": "%d sessions are keeping the Mac awake", "awakeOpenSettings": "Open Awake Settings…",
+            "awakeKeepAwake": "Keep Awake", "awakeStop": "Stop Keeping Awake", "awakeActive": "Keeping Awake", "awakeSessionRunning": "Session running",
+            "awakeMultipleSessions": "%d sessions running", "awakeOpenSettings": "Open Awake Settings…",
             "awakeDuration": "Duration", "awake30Minutes": "30 minutes", "awakeOneHour": "1 hour", "awakeTwoHours": "2 hours", "awakeFourHours": "4 hours", "awakeUnlimited": "Indefinitely",
             "awakeCustomDuration": "Custom duration", "awakeCustomDurationValue": "%d minutes", "awakeUntilDate": "Until a specific time",
             "awakeStartSession": "Start a session", "awakeSessionDuration": "Session duration", "awakeDisplaySleepAllowed": "Allow display sleep",
