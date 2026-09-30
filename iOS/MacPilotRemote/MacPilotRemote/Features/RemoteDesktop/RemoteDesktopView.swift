@@ -31,21 +31,7 @@ struct RemoteDesktopView: View {
             }
             .padding(.horizontal, 18).padding(.vertical, 12)
             inputStatus
-            GeometryReader { geometry in
-                VStack(spacing: 0) {
-                    videoArea
-                        .frame(height: geometry.size.height * (trackpad.keyboardActive ? 0.85 : 0.45))
-                    Divider()
-                    if trackpad.keyboardActive {
-                        shortcutBar
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        TrackpadView(model: trackpad)
-                            .allowsHitTesting(trackpad.phase.isActiveLike)
-                            .accessibilityLabel(appModel.text("trackpadTitle"))
-                    }
-                }
-            }
+            desktopSurface
             HStack(spacing: 28) {
                 Button {
                     landscape.toggle()
@@ -111,52 +97,65 @@ struct RemoteDesktopView: View {
         .padding(.horizontal, 16).padding(.bottom, 8)
     }
 
-    private var videoArea: some View {
+    /// One continuous relative touch surface spans the video and lower area.
+    /// It stays mounted when the keyboard changes so gestures share one engine.
+    private var desktopSurface: some View {
         GeometryReader { geometry in
-            RemoteVideoView(decoder: desktop.decoder)
-                .contentShape(Rectangle())
-                .gesture(SpatialTapGesture().onEnded { tap in
-                    guard desktop.showingVideo, trackpad.phase == .active,
-                          let display = desktop.displays.first(where: { $0.id == desktop.displayID }) else { return }
-                    // Account for letterboxing; bars never become Mac clicks.
-                    let scale = min(geometry.size.width / CGFloat(display.width), geometry.size.height / CGFloat(display.height))
-                    let width = CGFloat(display.width) * scale
-                    let height = CGFloat(display.height) * scale
-                    let x = (tap.location.x - (geometry.size.width - width) / 2) / width
-                    let y = (tap.location.y - (geometry.size.height - height) / 2) / height
-                    guard (0...1).contains(x), (0...1).contains(y) else { return }
-                    Task {
-                        if await appModel.desktopClick(RemotePointerRequest(displayID: display.id, x: x, y: y)) {
-                            trackpad.dismissKeyboard(); trackpad.requestKeyboard()
-                        }
-                    }
-                })
-                .overlay {
-                    if !desktop.showingVideo {
-                        VStack(spacing: 12) {
-                            Text(appModel.text(desktop.statusKey)).multilineTextAlignment(.center)
-                            if desktop.statusKey != "desktopBluetooth" {
-                                Button(appModel.text("retry")) { desktop.retry() }.buttonStyle(.bordered)
-                            }
-                        }
-                        .font(.subheadline).foregroundStyle(.white).padding(24)
+            let videoHeight = geometry.size.height * (trackpad.keyboardActive ? 0.85 : 0.45)
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    videoArea.frame(height: videoHeight)
+                    Divider()
+                    Spacer(minLength: 0)
+                }
+                .allowsHitTesting(false)
+
+                TrackpadView(model: trackpad)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(trackpad.phase.isActiveLike)
+                    .accessibilityLabel(appModel.text("trackpadTitle"))
+
+                if !desktop.showingVideo {
+                    videoStatus.frame(height: videoHeight)
+                }
+                if trackpad.keyboardActive {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        shortcutBar.frame(height: geometry.size.height - videoHeight)
                     }
                 }
-                .overlay(alignment: .topLeading) {
-                    if showDiagnostics {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(appModel.text("desktopFPS", desktop.metrics.fps))
-                            if let encode = desktop.encodeMs { Text(appModel.text("desktopEncode", encode)) }
-                            Text(appModel.text("desktopDecode", desktop.metrics.decodeMs))
-                            Text(appModel.text("desktopNetwork", desktop.metrics.kbps))
-                            Text(appModel.text("desktopDropped", desktop.metrics.dropped + desktop.sourceDropped))
-                            if let rtt = appModel.latencyMs { Text(appModel.text("desktopRTT", rtt)) }
-                        }
-                        .font(.caption.monospaced()).foregroundStyle(.white)
-                        .padding(8).background(.black.opacity(0.65)).allowsHitTesting(false)
-                    }
-                }
+            }
         }
+    }
+
+    private var videoStatus: some View {
+        VStack(spacing: 12) {
+            Text(appModel.text(desktop.statusKey))
+                .multilineTextAlignment(.center)
+                .allowsHitTesting(false)
+            if desktop.statusKey != "desktopBluetooth" {
+                Button(appModel.text("retry")) { desktop.retry() }.buttonStyle(.bordered)
+            }
+        }
+        .font(.subheadline).foregroundStyle(.white).padding(24)
+    }
+
+    private var videoArea: some View {
+        RemoteVideoView(decoder: desktop.decoder)
+            .overlay(alignment: .topLeading) {
+                if showDiagnostics {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(appModel.text("desktopFPS", desktop.metrics.fps))
+                        if let encode = desktop.encodeMs { Text(appModel.text("desktopEncode", encode)) }
+                        Text(appModel.text("desktopDecode", desktop.metrics.decodeMs))
+                        Text(appModel.text("desktopNetwork", desktop.metrics.kbps))
+                        Text(appModel.text("desktopDropped", desktop.metrics.dropped + desktop.sourceDropped))
+                        if let rtt = appModel.latencyMs { Text(appModel.text("desktopRTT", rtt)) }
+                    }
+                    .font(.caption.monospaced()).foregroundStyle(.white)
+                    .padding(8).background(.black.opacity(0.65)).allowsHitTesting(false)
+                }
+            }
     }
 
     private var shortcutBar: some View {

@@ -144,3 +144,7 @@ The repo-root `SUMMARY.md` is the project's Chinese development summary (feature
 - Validate the exact final exported IPA: distribution signature, matching signer certificate in the embedded profile, profile validity, bundle/team identity, and App Store entitlements. A development-signed archive alone does not prove that the exported IPA is invalid; never diagnose a failed build using another build's archive.
 - Keep the existing Xcode automatic signing + `app-store-connect` export flow unless a separately validated manual distribution flow is needed. Never treat an ASC API key or app-specific password as a signing certificate, or pin an old provisioning-profile UUID without revalidating it.
 - Upload success is not completion: wait for the exact build to reach VALID, verify the attached build, then submit review. VALID and WAITING_FOR_REVIEW do not mean Apple has approved the app.
+
+## Remote desktop touch behavior
+
+- PilotNest remote desktop uses one continuous relative mouse trackpad across the video and lower content area, both with the keyboard shown and hidden. Never map video touches to absolute screen coordinates. Keep buttons and the system keyboard interactive above the touch surface.
