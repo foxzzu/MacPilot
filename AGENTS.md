@@ -129,7 +129,7 @@ The repo-root `SUMMARY.md` is the project's Chinese development summary (feature
 - Before creating the Beta tag, `git fetch` and confirm `origin/main` has not moved. If it has, rebase, rerun the required gates on the merged tree, and derive a fresh Beta version.
 - Verify the Beta GitHub Actions run and its Release assets. Beta tags must produce GitHub prereleases (`prerelease=true`); never move or overwrite an existing tag.
 - Do not create a stable version tag (`v<major>.<minor>.<patch>`) or publish a formal Stable Release unless the user explicitly asks for a formal/stable release. When explicitly requested, use a new patch version, never overwrite a tag, and follow the authenticated Developer ID signing and Apple notarization flow above; verify the Actions run and release assets.
-- After a successful release, upgrade the local Mac (`/Applications/MacPilot.app`) from the corresponding verified release ZIP: validate its signature and notarization ticket with `codesign --verify --deep --strict` and `xcrun stapler validate`, quit the running app, install with `ditto`, relaunch, and confirm the remote channel answers on `127.0.0.1:43847`.
+- After a successful release, leave the local `/Applications/MacPilot.app` install alone — the user upgrades it manually. Never quit, replace, or relaunch the local app as part of the release flow. Only when the user explicitly asks for a local upgrade, validate the ZIP's signature and notarization ticket with `codesign --verify --deep --strict` and `xcrun stapler validate` before installing.
 
 ## App Store & TestFlight (asc CLI)
 
