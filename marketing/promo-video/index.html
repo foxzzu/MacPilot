@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>MacPilot Promo</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    width:1920px; height:1080px; overflow:hidden; background:#0a0c08;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing:antialiased; color:#f1f3eb;
+  }
+  #stage { position:absolute; inset:0; }
+  .layer { position:absolute; inset:0; }
+  .scene { position:absolute; inset:0; opacity:0; visibility:hidden; will-change:opacity; }
+
+  /* ---------- shared bits ---------- */
+  .mono { font-family:"SF Mono", ui-monospace, Menlo, monospace; }
+  .chip {
+    display:inline-flex; align-items:center; gap:8px; height:40px; padding:0 16px;
+    border-radius:12px; border:1px solid rgba(241,243,235,0.14); background:rgba(241,243,235,0.05);
+    font-size:16px; color:#a4a99d;
+  }
+  .kbd { display:inline-flex; gap:6px; }
+  .kbd .key {
+    display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:44px; padding:0 12px;
+    border-radius:10px; border:1px solid rgba(241,243,235,0.16); background:rgba(241,243,235,0.06);
+    font-family:"SF Mono", ui-monospace, Menlo, monospace; font-size:20px; color:#f1f3eb;
+  }
+  .key.lit { background:rgba(200,250,117,0.9); color:#1b2114; border-color:rgba(200,250,117,1); }
+  .accent { color:#c8fa75; }
+
+  /* ---------- background ---------- */
+  #bgBase {
+    background:
+      radial-gradient(1400px 900px at 72% -12%, rgba(200,250,117,0.09), transparent 62%),
+      radial-gradient(1000px 800px at 6% 108%, rgba(120,160,255,0.06), transparent 60%),
+      linear-gradient(180deg, #101208 0%, #0b0d09 55%, #090b07 100%);
+  }
+  #orb1, #orb2 { position:absolute; border-radius:50%; filter:blur(90px); }
+  #orb1 { width:760px; height:760px; left:-180px; top:-260px; background:rgba(200,250,117,0.05); }
+  #orb2 { width:900px; height:900px; right:-260px; bottom:-320px; background:rgba(110,150,240,0.05); }
+  #grid {
+    background-image:linear-gradient(rgba(241,243,235,0.028) 1px, transparent 1px),
+                     linear-gradient(90deg, rgba(241,243,235,0.028) 1px, transparent 1px);
+    background-size:64px 64px; background-position:0 0;
+  }
+  #vignette { background:radial-gradient(1300px 900px at 50% 46%, transparent 55%, rgba(0,0,0,0.42) 100%); }
+  #fadeBlack { background:#000; opacity:0; }
+
+  /* ---------- scene 1 : hook ---------- */
+  #s1 { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  #s1 .inner { display:flex; flex-direction:column; align-items:center; }
+  #s1Eyebrow { font-size:22px; letter-spacing:0.42em; color:#c8fa75; font-weight:600; margin-bottom:38px; }
+  #s1L1, #s1L2 { font-size:138px; font-weight:800; letter-spacing:0.01em; line-height:1.14; }
+  #s1Sub { margin-top:44px; font-size:30px; color:#a4a99d; }
+  #s1Sub b { color:#f1f3eb; font-weight:700; }
+  #s1Hint { position:absolute; bottom:76px; font-size:20px; color:#6f7466; letter-spacing:0.1em; }
+
+  /* ---------- scene 2 : menu bar ---------- */
+  #s2Desk { position:absolute; inset:0;
+    background:
+      radial-gradient(1200px 700px at 30% 20%, rgba(200,250,117,0.05), transparent 55%),
+      radial-gradient(900px 600px at 80% 90%, rgba(110,150,240,0.06), transparent 55%),
+      linear-gradient(180deg, #12150e 0%, #0c0e0a 100%); }
+  #s2Bar { position:absolute; top:0; left:0; right:0; height:46px;
+    background:rgba(18,20,15,0.82); border-bottom:1px solid rgba(241,243,235,0.08);
+    display:flex; align-items:center; padding:0 22px; backdrop-filter:blur(24px); }
+  #s2Menus { display:flex; gap:26px; margin-left:20px; font-size:15px; color:#d7dad0; }
+  #s2Menus span:first-child { font-weight:700; color:#f1f3eb; }
+  #s2Right { margin-left:auto; display:flex; align-items:center; gap:18px; }
+  #s2AppChip { width:34px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; }
+  #s2AppChip.hot { background:rgba(241,243,235,0.14); }
+  #s2AppChip img { width:22px; height:22px; display:block; }
+  #s2Cursor { position:absolute; z-index:40; will-change:transform; }
+  #s2Ripple { position:absolute; width:16px; height:16px; border-radius:50%;
+    border:2px solid rgba(200,250,117,0.9); z-index:39; opacity:0; }
+  #s2Panel { position:absolute; width:700px; top:58px; left:1046px; border-radius:20px;
+    background:rgba(26,29,22,0.9); border:1px solid rgba(241,243,235,0.1);
+    box-shadow:0 30px 80px rgba(0,0,0,0.55), 0 2px 0 rgba(241,243,235,0.06) inset;
+    padding:20px 24px 18px; transform-origin:100% 0; backdrop-filter:blur(30px); }
+  #s2PanelHead { display:flex; align-items:baseline; gap:12px; padding:2px 4px 12px;
+    border-bottom:1px solid rgba(241,243,235,0.08); }
+  #s2PanelHead .name { font-size:18px; font-weight:700; }
+  #s2PanelHead .ver { font-size:13px; color:#6f7466; }
+  #s2PanelHead .live { margin-left:auto; font-size:13px; color:#c8fa75; }
+  .modGroup { font-size:12px; letter-spacing:0.3em; color:#8a8f80; padding:14px 4px 6px; }
+  .modRow { display:flex; align-items:center; height:30px; padding:0 6px; border-radius:8px; }
+  .modRow .dot { width:6px; height:6px; border-radius:50%; background:#c8fa75; margin-right:12px; }
+  .modRow.off .dot { background:#4a4f42; }
+  .modRow .nm { font-size:15px; color:#e8ebdf; }
+  .modRow.off .nm { color:#7c8172; }
+  .modRow .tg { margin-left:auto; width:30px; height:18px; border-radius:9px; background:#c8fa75; position:relative; }
+  .modRow .tg::after { content:""; position:absolute; width:14px; height:14px; border-radius:50%;
+    background:#1b2114; top:2px; right:2px; }
+  .modRow.off .tg { background:#3a3e33; }
+  .modRow.off .tg::after { right:14px; background:#8a8f80; }
+  #s2Cap { position:absolute; left:110px; bottom:110px; font-size:34px; font-weight:700; color:#f1f3eb; }
+  #s2Cap small { display:block; font-size:20px; font-weight:400; color:#a4a99d; margin-top:12px; letter-spacing:0.06em; }
+  #s2Mark { position:absolute; left:110px; top:170px; font-size:132px; font-weight:900; letter-spacing:0.01em;
+    color:transparent; -webkit-text-stroke:1.5px rgba(241,243,235,0.13); }
+  #s2MarkSub { position:absolute; left:114px; top:330px; font-size:22px; color:#6f7466; letter-spacing:0.14em; }
+
+  /* ---------- feature scenes ---------- */
+  .feat { display:block; }
+  .featText { position:absolute; top:0; bottom:0; width:700px; display:flex; flex-direction:column; justify-content:center; }
+  .featText.left { left:110px; align-items:flex-start; text-align:left; }
+  .featText.right { left:1040px; align-items:flex-start; text-align:left; }
+  .fIndex { font-size:16px; letter-spacing:0.28em; color:#8a8f80; margin-bottom:26px; }
+  .fTitle { font-size:74px; font-weight:800; line-height:1.12; margin-bottom:22px; }
+  .fSub { font-size:25px; color:#a4a99d; line-height:1.6; margin-bottom:34px; }
+  .featCard { position:absolute; top:220px; width:860px; height:640px; border-radius:24px;
+    background:linear-gradient(180deg, rgba(31,35,26,0.92), rgba(22,25,19,0.92));
+    border:1px solid rgba(241,243,235,0.1);
+    box-shadow:0 40px 100px rgba(0,0,0,0.5), 0 1px 0 rgba(241,243,235,0.07) inset; overflow:hidden; }
+  .featCard.left { left:110px; } .featCard.right { left:950px; }
+  #watermark { position:absolute; right:56px; bottom:44px; font-size:17px; color:#c8fa75; opacity:0.55; letter-spacing:0.08em; }
+
+  /* F1 BLE */
+  #bleRing { position:absolute; left:410px; top:150px; width:380px; height:380px; border-radius:50%;
+    border:2px solid rgba(200,250,117,0.0); }
+  #bleRingGlow { position:absolute; left:410px; top:150px; width:380px; height:380px; border-radius:50%;
+    background:radial-gradient(circle, rgba(200,250,117,0.14), transparent 62%); opacity:0; }
+  #bleMac { position:absolute; left:470px; top:230px; }
+  #bleScreen { width:260px; height:160px; border-radius:12px; background:#101208;
+    border:2px solid #3a3e33; display:flex; align-items:center; justify-content:center; font-size:52px; }
+  #bleBase { width:300px; height:12px; border-radius:4px; background:#2c3026; margin:8px auto 0; }
+  #blePhone { position:absolute; width:86px; height:172px; border-radius:18px; background:#14170f;
+    border:2px solid #3a3e33; top:270px; will-change:transform; }
+  #bleNotch { width:36px; height:6px; border-radius:3px; background:#2c3026; margin:8px auto 0; }
+  #blePApp { margin:26px 10px 0; height:110px; border-radius:10px;
+    background:linear-gradient(180deg, rgba(200,250,117,0.16), rgba(200,250,117,0.05));
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
+  #blePApp .d { width:10px; height:10px; border-radius:50%; background:#c8fa75; }
+  #blePApp .t { font-size:9px; color:#c8fa75; }
+  #bleSig { position:absolute; left:150px; top:338px; width:340px; height:24px; opacity:0; }
+  #bleStatus { position:absolute; left:50%; transform:translateX(-50%); top:74px; height:44px; padding:0 22px;
+    border-radius:14px; display:flex; align-items:center; gap:10px; font-size:20px; font-weight:700;
+    background:rgba(200,250,117,0.14); border:1px solid rgba(200,250,117,0.5); color:#c8fa75; opacity:0; }
+  #bleStatus.away { background:rgba(241,243,235,0.07); border-color:rgba(241,243,235,0.2); color:#a4a99d; }
+  #bleDist { position:absolute; left:50%; transform:translateX(-50%); top:560px; font-size:17px; color:#8a8f80; }
+  #bleChipL { position:absolute; left:130px; top:120px; font-size:17px; color:#8a8f80; }
+
+  /* F2 clipboard */
+  #clipEditor { position:absolute; left:120px; top:80px; width:600px; height:400px; border-radius:14px;
+    background:#181b13; border:1px solid rgba(241,243,235,0.09); }
+  .tb { height:36px; display:flex; align-items:center; gap:8px; padding:0 14px;
+    border-bottom:1px solid rgba(241,243,235,0.07); }
+  .tb .d { width:11px; height:11px; border-radius:50%; }
+  .tb .nm { margin-left:10px; font-size:13px; color:#8a8f80; }
+  #clipLines { padding:18px 22px; }
+  .cline { height:12px; border-radius:6px; background:#2e3226; margin-bottom:18px; }
+  #clipPasteLine { height:22px; font-size:18px; color:#c8fa75; margin-top:4px; min-height:22px; }
+  #clipCaret { position:absolute; width:2px; height:24px; background:#c8fa75; }
+  #clipPanel { position:absolute; left:170px; top:260px; width:330px; border-radius:16px;
+    background:rgba(20,23,16,0.96); border:1px solid rgba(241,243,235,0.12);
+    box-shadow:0 24px 60px rgba(0,0,0,0.5); padding:12px; will-change:transform,opacity; }
+  #clipPanel .ph { font-size:13px; color:#8a8f80; padding:4px 6px 10px; display:flex; }
+  #clipPanel .ph b { color:#e8ebdf; margin-right:8px; }
+  .crow { display:flex; align-items:center; gap:10px; height:44px; border-radius:10px; padding:0 10px; }
+  .crow.sel { background:rgba(200,250,117,0.12); border:1px solid rgba(200,250,117,0.4); }
+  .crow .tag { font-size:11px; color:#1b2114; background:#c8fa75; border-radius:5px; padding:2px 7px; font-weight:700; }
+  .crow .tag.g { background:#3a3e33; color:#a4a99d; }
+  .crow .val { font-size:14px; color:#c9cdc0; white-space:nowrap; overflow:hidden; }
+  .swatch { width:20px; height:20px; border-radius:6px; background:#c8fa75; border:1px solid rgba(0,0,0,0.3); }
+  #clipFly { position:absolute; height:40px; padding:0 14px; border-radius:10px; background:rgba(200,250,117,0.95);
+    color:#1b2114; font-size:15px; font-weight:700; display:flex; align-items:center; opacity:0;
+    box-shadow:0 14px 34px rgba(0,0,0,0.4); white-space:nowrap; }
+  #clipCount { position:absolute; right:44px; bottom:40px; }
+
+  /* F3 switcher */
+  #swGhost1, #swGhost2 { position:absolute; border-radius:12px; background:rgba(241,243,235,0.045);
+    border:1px solid rgba(241,243,235,0.06); }
+  #swGhost1 { left:110px; top:90px; width:300px; height:190px; }
+  #swGhost2 { left:560px; top:430px; width:220px; height:150px; }
+  #swPreview { position:absolute; left:230px; top:90px; width:400px; height:240px; border-radius:14px;
+    background:#181b13; border:1px solid rgba(241,243,235,0.1); overflow:hidden; }
+  #swPreview .body { position:absolute; inset:36px 0 0; }
+  #swBar { position:absolute; left:110px; top:390px; width:640px; height:150px; border-radius:18px;
+    background:rgba(28,31,24,0.97); border:1px solid rgba(241,243,235,0.12);
+    box-shadow:0 24px 60px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; gap:22px; }
+  .swTile { width:112px; height:116px; border-radius:14px; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:10px; position:relative; }
+  .swTile .ic { width:60px; height:60px; border-radius:14px; display:flex; align-items:center; justify-content:center; }
+  .swTile .prompt { font-family:"SF Mono", ui-monospace, Menlo, monospace; color:#c8fa75; font-size:19px; font-weight:700; }
+  .swTile .lb { font-size:14px; color:#c9cdc0; }
+  .swPrev { position:absolute; inset:0; }
+  #swSel { position:absolute; width:120px; height:124px; border-radius:16px; border:2px solid #c8fa75;
+    box-shadow:0 0 0 4px rgba(200,250,117,0.18); will-change:transform; }
+  #swDone { position:absolute; left:230px; top:90px; width:400px; height:240px; border-radius:14px; overflow:hidden;
+    border:1px solid rgba(241,243,235,0.1); opacity:0; }
+  #swDone .body { position:absolute; inset:36px 0 0; }
+  #swChip { position:absolute; right:44px; bottom:40px; color:#c8fa75; border-color:rgba(200,250,117,0.5);
+    background:rgba(200,250,117,0.12); font-weight:700; }
+
+  /* F4 capture */
+  #shWin { position:absolute; left:110px; top:70px; width:620px; height:410px; border-radius:14px;
+    background:#181b13; border:1px solid rgba(241,243,235,0.09); overflow:hidden; }
+  #shHero { position:absolute; left:24px; top:58px; width:572px; height:220px; border-radius:10px;
+    background:linear-gradient(135deg, #4a7dd8 0%, #7fc4bb 60%, #c8fa75 130%); }
+  #shBar1 { position:absolute; left:24px; top:300px; width:340px; height:14px; border-radius:7px; background:#2e3226; }
+  #shBar2 { position:absolute; left:24px; top:330px; width:240px; height:14px; border-radius:7px; background:#2e3226; }
+  #shSqs { position:absolute; left:24px; top:362px; display:flex; gap:12px; }
+  #shSqs i { width:26px; height:26px; border-radius:8px; background:#3a3e33; }
+  .dim { position:absolute; background:rgba(6,8,4,0); will-change:background; }
+  #dimT { left:0; top:0; right:0; } #dimB { left:0; right:0; bottom:0; }
+  #dimL { left:0; } #dimR { right:0; }
+  #shMarq { position:absolute; border:2px dashed #c8fa75; border-radius:4px; box-shadow:0 0 0 200000px transparent; }
+  #shCross { position:absolute; width:56px; height:56px; will-change:transform; opacity:0; }
+  #shFlash { position:absolute; inset:0; background:#fff; opacity:0; }
+  #shThumb { position:absolute; right:52px; bottom:56px; width:210px; height:140px; border-radius:12px;
+    border:2px solid #c8fa75; overflow:hidden; opacity:0; box-shadow:0 20px 50px rgba(0,0,0,0.5); }
+  #shThumb .inner { position:absolute; inset:0; }
+  #shThumb .mini-hero { position:absolute; left:8px; top:20px; width:194px; height:78px; border-radius:5px;
+    background:linear-gradient(135deg, #4a7dd8 0%, #7fc4bb 60%, #c8fa75 130%); }
+  #shThumb .mini-b { position:absolute; left:8px; top:106px; width:120px; height:9px; border-radius:5px; background:#2e3226; }
+  #shArrow { position:absolute; right:52px; bottom:56px; width:210px; height:140px; opacity:0; }
+  #shChip { position:absolute; right:52px; bottom:210px; color:#c8fa75; border-color:rgba(200,250,117,0.5);
+    background:rgba(200,250,117,0.12); font-weight:700; }
+
+  /* F5 awake */
+  #awCenter { position:absolute; left:50%; top:290px; transform:translateX(-50%); }
+  #awToggle { position:absolute; left:50%; top:96px; transform:translateX(-50%); width:150px; height:84px;
+    border-radius:42px; background:#3a3e33; }
+  #awKnob { position:absolute; width:68px; height:68px; border-radius:50%; background:#e8ebdf; top:8px; left:8px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4); }
+  #awRingSvg { position:absolute; left:50%; top:270px; transform:translateX(-50%); }
+  #awEmoji { position:absolute; left:50%; top:352px; transform:translateX(-50%); font-size:88px; will-change:transform; }
+  #awCount { position:absolute; left:50%; top:520px; transform:translateX(-50%); font-size:34px; color:#f1f3eb; }
+  #awCount b { color:#c8fa75; font-weight:700; }
+  .awChip { position:absolute; top:120px; font-size:17px; color:#a4a99d; opacity:0; }
+  #awChipL { left:120px; } #awChipR { right:120px; }
+
+  /* F6 quit */
+  .qWin { position:absolute; width:300px; height:170px; border-radius:14px; background:#181b13;
+    border:1px solid rgba(241,243,235,0.1); will-change:transform,opacity; }
+  .qWin .nm { font-size:15px; color:#e8ebdf; margin-left:12px; }
+  .qWin .sz { position:absolute; right:56px; top:10px; font-size:12px; color:#8a8f80; }
+  .qWin .ring { position:absolute; right:12px; top:8px; }
+  .qWin .bar { height:10px; border-radius:5px; background:#2e3226; margin:0 18px; }
+  #qMem { position:absolute; left:50%; bottom:52px; transform:translateX(-50%); font-size:40px; font-weight:800; }
+  #qMem small { font-size:20px; font-weight:400; color:#a4a99d; margin-right:12px; }
+  #qMem b { color:#c8fa75; }
+  #qChip { position:absolute; right:44px; top:44px; color:#c8fa75; border-color:rgba(200,250,117,0.5);
+    background:rgba(200,250,117,0.12); font-weight:700; }
+
+  /* ---------- scene 9 : ticker ---------- */
+  #s9 { display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; }
+  #s9Eyebrow { font-size:20px; letter-spacing:0.4em; color:#8a8f80; margin-bottom:36px; }
+  #s9Clip { width:100%; overflow:hidden; }
+  #s9Track { display:inline-flex; white-space:nowrap; will-change:transform; }
+  #s9Track span { font-size:128px; font-weight:900; letter-spacing:0.01em; padding-right:56px; }
+  #s9Track .fill { color:#c8fa75; }
+  #s9Track .line { color:transparent; -webkit-text-stroke:2px rgba(200,250,117,0.75); }
+  #s9Track2 { display:inline-flex; white-space:nowrap; will-change:transform; margin-top:14px; opacity:0.5; }
+  #s9Track2 span { font-size:76px; font-weight:900; letter-spacing:0.02em; padding-right:44px;
+    color:transparent; -webkit-text-stroke:1.5px rgba(200,250,117,0.65); }
+  #s9Sub { margin-top:40px; font-size:24px; color:#a4a99d; letter-spacing:0.04em; }
+
+  /* ---------- scene 10 : why ---------- */
+  #s10 { display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #s10Head { font-size:20px; letter-spacing:0.36em; color:#8a8f80; margin-bottom:52px; }
+  #s10Row { display:flex; gap:26px; }
+  .whyTile { width:374px; height:224px; border-radius:20px; background:rgba(28,31,24,0.72);
+    border:1px solid rgba(241,243,235,0.1); padding:28px; display:flex; flex-direction:column;
+    will-change:transform,opacity; }
+  .whyTile .n { font-size:22px; color:#c8fa75; margin-bottom:auto; }
+  .whyTile .t { font-size:31px; font-weight:800; line-height:1.35; }
+
+  /* ---------- scene 11 : outro ---------- */
+  #s11 { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  #s11Glow { position:absolute; left:50%; top:50%; transform:translate(-50%,-56%); width:900px; height:700px;
+    background:radial-gradient(closest-side, rgba(200,250,117,0.13), transparent 70%); }
+  #s11Icon { width:180px; height:180px; margin-bottom:38px; }
+  #s11Word { font-size:96px; font-weight:800; letter-spacing:0.01em; line-height:1; }
+  #s11Tag { margin-top:26px; font-size:30px; color:#a4a99d; }
+  #s11Cta { margin-top:52px; height:74px; padding:0 44px; border-radius:22px; background:#c8fa75; color:#1b2114;
+    font-size:26px; font-weight:800; display:flex; align-items:center; position:relative; overflow:hidden; }
+  #s11CtaShine { position:absolute; top:0; bottom:0; width:120px;
+    background:linear-gradient(105deg, transparent, rgba(255,255,255,0.75), transparent); left:-160px; }
+  #s11Url { margin-top:30px; }
+  #s11Url .mono { font-size:22px; color:#e8ebdf; }
+  #s11Meta { margin-top:16px; font-size:19px; color:#8a8f80; }
+  #s11Footer { position:absolute; bottom:64px; font-size:17px; color:#6f7466; letter-spacing:0.12em; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="bgBase"></div>
+  <div class="layer" id="grid"></div>
+  <div id="orb1"></div><div id="orb2"></div>
+  <div class="layer" id="vignette"></div>
+
+  <!-- S1 -->
+  <div class="scene" id="s1">
+    <div class="inner" id="s1Inner">
+      <div id="s1Eyebrow">YOUR MAC. ON AUTOPILOT.</div>
+      <div id="s1L1">少一点操作。</div>
+      <div id="s1L2">多一点<span class="accent">心流</span>。</div>
+      <div id="s1Sub"><b>MacPilot</b> — 让 Mac 进入自动驾驶</div>
+    </div>
+    <div id="s1Hint">把重复的事交给 MacPilot。</div>
+  </div>
+
+  <!-- S2 menu bar -->
+  <div class="scene" id="s2">
+    <div id="s2Desk"></div>
+    <div id="s2Mark">MacPilot</div>
+    <div id="s2MarkSub">菜单栏里的自动化管家</div>
+    <div id="s2Bar">
+      <svg id="appleLogo" width="16" height="19" viewBox="0 0 16 19"></svg>
+      <div id="s2Menus"><span>访达</span><span>文件</span><span>编辑</span><span>显示</span><span>前往</span><span>窗口</span><span>帮助</span></div>
+      <div id="s2Right">
+        <svg id="icWifi" width="20" height="15" viewBox="0 0 20 15"></svg>
+        <svg id="icBatt" width="27" height="13" viewBox="0 0 27 13"></svg>
+        <svg id="icCC" width="18" height="14" viewBox="0 0 18 14"></svg>
+        <div id="s2AppChip"><img src="assets/icon.png" alt=""></div>
+      </div>
+    </div>
+    <div id="s2Panel">
+      <div id="s2PanelHead"><span class="name">MacPilot</span><span class="ver mono">v1.1</span><span class="live">● 菜单栏常驻</span></div>
+      <div id="s2Rows"></div>
+    </div>
+    <div id="s2Cap">18 个模块，常驻菜单栏。<small>只开启你需要的，其余保持安静。</small></div>
+    <div id="s2Ripple"></div>
+    <svg id="s2Cursor" width="30" height="34" viewBox="0 0 30 34"></svg>
+  </div>
+
+  <!-- F1 BLE -->
+  <div class="scene feat" id="f1">
+    <div class="featText left">
+      <div class="fIndex">01 / 06 · 自动化</div>
+      <div class="fTitle">BLE 解锁</div>
+      <div class="fSub">靠近，即刻就绪。<br>离开，自动锁定。</div>
+      <div class="kbd"><span class="key">iPhone</span><span class="key">Apple&nbsp;Watch</span></div>
+    </div>
+    <div class="featCard right">
+      <div id="bleChipL">● 蓝牙感应</div>
+      <div id="bleStatus"></div>
+      <div id="bleRingGlow"></div>
+      <div id="bleRing"></div>
+      <div id="bleMac">
+        <div id="bleScreen">🔒</div>
+        <div id="bleBase"></div>
+      </div>
+      <svg id="bleSig"></svg>
+      <div id="blePhone"><div id="bleNotch"></div><div id="blePApp"><div class="d"></div><div class="t">MacPilot</div></div></div>
+      <div id="bleDist"></div>
+    </div>
+  </div>
+
+  <!-- F2 clipboard -->
+  <div class="scene feat" id="f2">
+    <div class="featText right">
+      <div class="fIndex">02 / 06 · 效率工具</div>
+      <div class="fTitle">剪贴板历史</div>
+      <div class="fSub">复制过的，都在。<br>历史随手可取，粘贴一步到位。</div>
+      <div class="kbd" id="clipKbd"><span class="key">⌘</span><span class="key">⇧</span><span class="key">V</span></div>
+    </div>
+    <div class="featCard left">
+      <div id="clipEditor">
+        <div class="tb"><i class="d" style="background:#ff5f57"></i><i class="d" style="background:#febc2e"></i><i class="d" style="background:#28c840"></i><span class="nm">备忘录</span></div>
+        <div id="clipLines"></div>
+        <div id="clipCaret"></div>
+      </div>
+      <div id="clipPanel">
+        <div class="ph"><b>剪切板</b>最近 12 条</div>
+        <div id="clipRows"></div>
+      </div>
+      <div id="clipFly">macpilot.liuguofeng.com</div>
+      <div class="chip" id="clipCount">已保存 12 条</div>
+    </div>
+  </div>
+
+  <!-- F3 switcher -->
+  <div class="scene feat" id="f3">
+    <div class="featText left">
+      <div class="fIndex">03 / 06 · 效率工具</div>
+      <div class="fTitle">窗口切换</div>
+      <div class="fSub">按住 ⌥ Tab，<br>在应用之间滑行。</div>
+      <div class="kbd" id="swKbd"><span class="key">⌥</span><span class="key">Tab</span></div>
+    </div>
+    <div class="featCard right">
+      <div id="swGhost1"></div><div id="swGhost2"></div>
+      <div id="swPreview"></div>
+      <div id="swDone"></div>
+      <div id="swBar"></div>
+      <div id="swSel"></div>
+      <div class="chip" id="swChip"></div>
+    </div>
+  </div>
+
+  <!-- F4 capture -->
+  <div class="scene feat" id="f4">
+    <div class="featText right">
+      <div class="fIndex">04 / 06 · 效率工具</div>
+      <div class="fTitle">截图与标注</div>
+      <div class="fSub">框选即拍，随手标注，<br>自动进入剪贴板。</div>
+      <div class="kbd" id="shKbd"><span class="key">F1</span></div>
+    </div>
+    <div class="featCard left">
+      <div id="shWin">
+        <div class="tb"><i class="d" style="background:#ff5f57"></i><i class="d" style="background:#febc2e"></i><i class="d" style="background:#28c840"></i><span class="nm">产品概览</span></div>
+        <div id="shHero"></div><div id="shBar1"></div><div id="shBar2"></div>
+        <div id="shSqs"><i></i><i></i><i></i></div>
+      </div>
+      <div class="dim" id="dimT"></div><div class="dim" id="dimB"></div>
+      <div class="dim" id="dimL"></div><div class="dim" id="dimR"></div>
+      <div id="shMarq"></div>
+      <svg id="shCross"></svg>
+      <div id="shFlash"></div>
+      <div id="shThumb"><div class="inner"><div class="mini-hero"></div><div class="mini-b"></div></div></div>
+      <svg id="shArrow" viewBox="0 0 210 140"></svg>
+      <div class="chip" id="shChip">已复制到剪贴板</div>
+    </div>
+  </div>
+
+  <!-- F5 awake -->
+  <div class="scene feat" id="f5">
+    <div class="featText left">
+      <div class="fIndex">05 / 06 · 自动化</div>
+      <div class="fTitle">保持唤醒</div>
+      <div class="fSub">该醒着的时候，<br>绝不打盹。</div>
+      <div class="kbd"><span class="key">演示</span><span class="key">下载</span><span class="key">长任务</span></div>
+    </div>
+    <div class="featCard right">
+      <div class="awChip" id="awChipL">屏幕不熄灭</div>
+      <div class="awChip" id="awChipR">系统不休眠</div>
+      <div id="awToggle"><div id="awKnob"></div></div>
+      <svg id="awRingSvg" width="260" height="260" viewBox="0 0 260 260"></svg>
+      <div id="awEmoji">☕️</div>
+      <div id="awCount">剩余 <b>02:00:00</b></div>
+    </div>
+  </div>
+
+  <!-- F6 quit -->
+  <div class="scene feat" id="f6">
+    <div class="featText right">
+      <div class="fIndex">06 / 06 · 自动化</div>
+      <div class="fTitle">闲置自动退出</div>
+      <div class="fSub">后台吃内存的应用，<br>到点自动收尾。</div>
+      <div class="kbd"><span class="key">规则</span><span class="key">白名单</span></div>
+    </div>
+    <div class="featCard left">
+      <div id="qWins"></div>
+      <div class="chip" id="qChip">后台已清爽</div>
+      <div id="qMem"><small>已释放</small><b>0.0 GB</b></div>
+    </div>
+  </div>
+
+  <div id="watermark">✳ MacPilot</div>
+
+  <!-- S9 ticker -->
+  <div class="scene" id="s9">
+    <div id="s9Eyebrow">不止这些</div>
+    <div id="s9Clip"><div id="s9Track"></div><div id="s9Track2"></div></div>
+    <div id="s9Sub">还有 画中画 · 平滑滚动 · Dock 分组 · 存储压缩 · 远程控制 · 屏幕录制 · 本地端口 …</div>
+  </div>
+
+  <!-- S10 why -->
+  <div class="scene" id="s10">
+    <div id="s10Head">为什么是 MACPILOT</div>
+    <div id="s10Row"></div>
+  </div>
+
+  <!-- S11 outro -->
+  <div class="scene" id="s11">
+    <div id="s11Glow"></div>
+    <img id="s11Icon" src="assets/icon.png" alt="">
+    <div id="s11Word">MacPilot</div>
+    <div id="s11Tag">让 Mac 进入自动驾驶</div>
+    <div id="s11Cta"><div id="s11CtaShine"></div>为 Mac 开启自动驾驶</div>
+    <div class="chip" id="s11Url"><span class="mono">macpilot.liuguofeng.com</span></div>
+    <div id="s11Meta">GitHub Releases · macOS 14+ · Apple Silicon &amp; Intel</div>
+    <div id="s11Footer">BUILT FOR MAC. MADE FOR YOUR FLOW.</div>
+  </div>
+
+  <div class="layer" id="fadeBlack"></div>
+</div>
+
+<script>
+"use strict";
+/* ---------- tiny deterministic helpers ---------- */
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
+const lerp=(a,b,k)=>a+(b-a)*k;
+const seg=(t,a,b)=>clamp((t-a)/((b-a)||1e-9),0,1);
+const eo=k=>1-Math.pow(1-k,3);
+const ei=k=>k*k*k;
+const eio=k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+const eb=k=>{const c=1.9;return 1+(c+1)*Math.pow(k-1,3)+c*Math.pow(k-1,2);};
+const $=s=>document.querySelector(s);
+const $$=s=>Array.from(document.querySelectorAll(s));
+function fmtHMS(s){s=Math.max(0,Math.floor(s));const h=s/3600|0,m=(s%3600)/60|0,x=s%60;
+  return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0");}
+function setBox(el,x,y,w,h){el.style.left=x+"px";el.style.top=y+"px";
+  if(w!=null)el.style.width=w+"px"; if(h!=null)el.style.height=h+"px";}
+function opac(el,o){el.style.opacity=o;el.style.visibility=o>0.001?"visible":"hidden";}
+function rise(el,p,dist){dist=dist==null?36:dist;el.style.opacity=eo(p);
+  el.style.transform="translateY("+((1-eo(p))*dist)+"px)";}
+
+/* ---------- static SVG builders ---------- */
+$("#appleLogo").innerHTML =
+  '<defs><mask id="bite"><rect width="16" height="19" fill="#fff"/><circle cx="14.6" cy="9.4" r="3.4" fill="#000"/></mask></defs>'+
+  '<ellipse cx="7.6" cy="11" rx="6.2" ry="5.6" fill="#e8ebdf" mask="url(#bite)"/>'+
+  '<ellipse cx="8.6" cy="3.4" rx="1.5" ry="2.6" fill="#e8ebdf" transform="rotate(-28 8.6 3.4)"/>';
+$("#icWifi").innerHTML =
+  '<path d="M2 5.2 A 12 12 0 0 1 18 5.2" stroke="#e8ebdf" stroke-width="1.9" fill="none" stroke-linecap="round"/>'+
+  '<path d="M4.8 8.4 A 8 8 0 0 1 15.2 8.4" stroke="#e8ebdf" stroke-width="1.9" fill="none" stroke-linecap="round"/>'+
+  '<path d="M7.6 11.4 A 4 4 0 0 1 12.4 11.4" stroke="#e8ebdf" stroke-width="1.9" fill="none" stroke-linecap="round"/>'+
+  '<circle cx="10" cy="13.4" r="1.3" fill="#e8ebdf"/>';
+$("#icBatt").innerHTML =
+  '<rect x="0.7" y="0.7" width="22" height="11.6" rx="3.4" stroke="#8a8f80" fill="none" stroke-width="1.2"/>'+
+  '<rect x="2.5" y="2.5" width="15" height="8" rx="2" fill="#e8ebdf"/>'+
+  '<path d="M24.6 4.4 v4.2" stroke="#8a8f80" stroke-width="1.6" stroke-linecap="round"/>';
+$("#icCC").innerHTML =
+  '<rect x="0.7" y="0.9" width="16.6" height="5.2" rx="2.6" stroke="#e8ebdf" fill="none" stroke-width="1.3"/>'+
+  '<circle cx="12.6" cy="3.5" r="1.9" fill="#e8ebdf"/>'+
+  '<rect x="0.7" y="7.9" width="16.6" height="5.2" rx="2.6" stroke="#e8ebdf" fill="none" stroke-width="1.3"/>'+
+  '<circle cx="5.4" cy="10.5" r="1.9" fill="#e8ebdf"/>';
+$("#s2Cursor").innerHTML =
+  '<path d="M4 1.6 L4 25.4 L10.6 19.8 L14.4 28.6 L18.6 26.7 L14.8 18.2 L22.6 17.6 Z" '+
+  'fill="#f7f8f3" stroke="#1b2114" stroke-width="1.6" stroke-linejoin="round"/>';
+$("#shCross").innerHTML =
+  '<line x1="28" y1="0" x2="28" y2="18" stroke="#c8fa75" stroke-width="1.6"/>'+
+  '<line x1="28" y1="38" x2="28" y2="56" stroke="#c8fa75" stroke-width="1.6"/>'+
+  '<line x1="0" y1="28" x2="18" y2="28" stroke="#c8fa75" stroke-width="1.6"/>'+
+  '<line x1="38" y1="28" x2="56" y2="28" stroke="#c8fa75" stroke-width="1.6"/>'+
+  '<circle cx="28" cy="28" r="9" stroke="#c8fa75" stroke-width="1.6" fill="none"/>';
+
+/* ---------- S2 module rows ---------- */
+const MODS = [
+  ["自动化", [["退出",1],["启动",1],["保持唤醒",1],["BLE 解锁",1],["远程控制",1],["输入法",1]]],
+  ["效率工具", [["剪切板",1],["窗口切换",1],["截屏与贴图",1],["画中画",1],["平滑滚动",1],["访达右键菜单",1],
+                ["Dock 分组",1],["存储压缩",1],["屏幕录制",0],["内存监控",1],["CPU 监控",1],["本地端口",0]]]
+];
+(function(){
+  const host=$("#s2Rows"); let html="";
+  for(const [g,rows] of MODS){
+    html+='<div class="modGroup">'+g+"</div>";
+    for(const [nm,on] of rows) html+='<div class="modRow'+(on?"":" off")+'"><i class="dot"></i><span class="nm">'+nm+'</span><span class="tg"></span></div>';
+  }
+  host.innerHTML=html;
+})();
+const modRows=$$("#s2Rows .modRow"), modGroups=$$("#s2Rows .modGroup");
+
+/* ---------- F2 clipboard rows ---------- */
+const CLIPROWS=[
+  ["文本","团队周会纪要 v3"],
+  ["链接","github.com/misswell/MacPilot"],
+  ["色板","#c8fa75",true],
+  ["图片","Screenshot 2026.png"],
+  ["文本","明天 10:00 前发出"]
+];
+(function(){
+  $("#clipRows").innerHTML=CLIPROWS.map((r,i)=>
+    '<div class="crow"><span class="tag'+(r[2]?"":" g")+'">'+({文本:"TXT",链接:"URL",色板:"RGB",图片:"IMG"}[r[0]])+'</span>'+
+    (r[2]?'<span class="swatch"></span>':"")+'<span class="val">'+r[1]+"</span></div>").join("");
+  $("#clipLines").innerHTML=
+    '<div class="cline" style="width:78%"></div><div class="cline" style="width:92%"></div>'+
+    '<div class="cline" style="width:64%"></div><div class="cline" style="width:0;margin-bottom:2px"></div><div id="clipPasteLine"></div>'+
+    '<div class="cline" style="width:85%"></div><div class="cline" style="width:52%"></div>';
+})();
+const clipRows=$$("#clipRows .crow");
+
+/* ---------- F3 switcher ---------- */
+const SWAPPS=[
+  {lb:"访达",   bg:"linear-gradient(160deg,#6ea8ff,#3c6fd4)"},
+  {lb:"备忘录", bg:"linear-gradient(160deg,#ffe08a,#f0b429)"},
+  {lb:"终端",   bg:"linear-gradient(160deg,#3a3f36,#1d211b)", prompt:">_"},
+  {lb:"浏览器", bg:"linear-gradient(160deg,#9b8cff,#5f6bf2)"}
+];
+(function(){
+  $("#swBar").innerHTML=SWAPPS.map(a=>'<div class="swTile"><div class="ic" style="background:'+a.bg+'">'+(a.prompt?'<span class="prompt">'+a.prompt+"</span>":"")+'</div><div class="lb">'+a.lb+"</div></div>").join("");
+  const prevHTML=(a)=>'<div class="tb"><i class="d" style="background:#ff5f57"></i><i class="d" style="background:#febc2e"></i><i class="d" style="background:#28c840"></i><span class="nm">'+a.lb+'</span></div><div class="body" style="background:'+a.bg+'"></div>';
+  $("#swPreview").innerHTML=SWAPPS.map(a=>'<div class="swPrev">'+prevHTML(a)+"</div>").join("");
+  $("#swDone").innerHTML=prevHTML(SWAPPS[2]);
+})();
+const swTiles=$$("#swBar .swTile"), swPrevs=$$("#swPreview .swPrev");
+
+/* ---------- F4 dims / marquee ---------- */
+const CARD={x:0,y:0,w:860,h:640}; // dims live inside card
+(function(){
+  $("#dimT").style.left="0px"; $("#dimT").style.top="0px";
+  $("#dimB").style.height="0px"; $("#dimL").style.width="0px"; $("#dimR").style.width="0px";
+})();
+/* arrow svg */
+$("#shArrow").innerHTML='<path id="shArrowPath" d="M30 108 C 70 118, 120 104, 168 62" fill="none" stroke="#c8fa75" stroke-width="5" stroke-linecap="round"/>';
+$("#shArrowPath").style.strokeDasharray="180";
+$("#shArrowPath").style.strokeDashoffset="180";
+
+/* ---------- F5 ring ---------- */
+(function(){
+  const R=112,C=2*Math.PI*R;
+  $("#awRingSvg").innerHTML=
+    '<circle cx="130" cy="130" r="'+R+'" stroke="rgba(241,243,235,0.08)" stroke-width="8" fill="none"/>'+
+    '<circle id="awProg" cx="130" cy="130" r="'+R+'" stroke="#c8fa75" stroke-width="8" fill="none" '+
+    'stroke-linecap="round" transform="rotate(-90 130 130)" style="stroke-dasharray:'+C+';stroke-dashoffset:'+C+'"/>';
+})();
+const AW_C=2*Math.PI*112;
+
+/* ---------- F6 quit windows ---------- */
+const QWINS=[
+  {nm:"视频播放器", sz:"1.2 GB", x:150, y:70,  a:0.8, b:1.7},
+  {nm:"下载器",     sz:"812 MB", x:330, y:210, a:1.3, b:2.2},
+  {nm:"旧笔记",     sz:"386 MB", x:130, y:350, a:1.8, b:2.7}
+];
+(function(){
+  const R=17,C=2*Math.PI*R;
+  $("#qWins").innerHTML=QWINS.map((w,i)=>
+    '<div class="qWin" id="qw'+i+'" style="left:'+w.x+'px;top:'+w.y+'px">'+
+    '<div class="tb"><i class="d" style="background:#ff5f57"></i><i class="d" style="background:#febc2e"></i><i class="d" style="background:#28c840"></i><span class="nm">'+w.nm+'</span></div>'+
+    '<span class="sz">'+w.sz+'</span>'+
+    '<svg class="ring" width="42" height="42" viewBox="0 0 42 42">'+
+    '<circle cx="21" cy="21" r="'+R+'" stroke="rgba(241,243,235,0.1)" stroke-width="3.4" fill="none"/>'+
+    '<circle id="qr'+i+'" cx="21" cy="21" r="'+R+'" stroke="#c8fa75" stroke-width="3.4" fill="none" stroke-linecap="round" '+
+    'transform="rotate(-90 21 21)" style="stroke-dasharray:'+C+';stroke-dashoffset:0"/></svg>'+
+    '<div style="margin-top:14px"><div class="bar" style="width:70%"></div>'+
+    '<div class="bar" style="width:46%;margin-top:12px"></div></div></div>').join("");
+})();
+const Q_C=2*Math.PI*17;
+
+/* ---------- S9 ticker content ---------- */
+(function(){
+  const seq="LESS FRICTION ↗ MORE FLOW ✳ MADE FOR MAC ✳ ";
+  let html="", html2="";
+  for(let k=0;k<3;k++){ html+='<span class="'+(k%2?"line":"fill")+'">'+seq+"</span>"; html2+='<span>'+seq+"</span>"; }
+  $("#s9Track").innerHTML=html;
+  $("#s9Track2").innerHTML=html2;
+})();
+
+/* ---------- S10 tiles ---------- */
+const WHY=["为 Mac 原生构建","轻量常驻","重要的，留在本机","只开启你需要的"];
+$("#s10Row").innerHTML=WHY.map((t,i)=>'<div class="whyTile"><div class="n mono">0'+(i+1)+'</div><div class="t">'+t+"</div></div>").join("");
+const whyTiles=$$(".whyTile");
+
+/* ================================================================
+   TIMELINE
+   ================================================================ */
+const SC={
+  s1:[0.0,4.6], s2:[4.4,10.0],
+  f1:[9.8,13.6], f2:[13.4,17.2], f3:[17.0,20.8],
+  f4:[20.6,24.4], f5:[24.2,28.0], f6:[27.8,31.6],
+  s9:[31.4,33.9], s10:[33.7,36.7], s11:[36.5,42.0]
+};
+let marqW=0, marqW2=0;
+
+function sceneVis(el,range,t,fade){
+  const a=range[0],b=range[1];
+  const o=Math.min(seg(t,a,a+fade),1-seg(t,b-fade,b));
+  opac(el,o); return o;
+}
+function pressKeys(t,u,keys){ // keyboard keys light up in sequence
+  keys.forEach((k,i)=>{
+    k.classList.toggle("lit", u>0.9+i*0.18 && u<1.35+i*0.18);
+  });
+}
+
+function renderFrame(t){
+  /* background drift */
+  $("#orb1").style.transform="translate("+Math.sin(t*0.21)*40+"px,"+Math.cos(t*0.17)*30+"px)";
+  $("#orb2").style.transform="translate("+Math.cos(t*0.13)*50+"px,"+Math.sin(t*0.19)*36+"px)";
+
+  /* ---------- S1 ---------- */
+  const o1=sceneVis($("#s1"),SC.s1,t,0.5);
+  if(o1>0){
+    const u=t-SC.s1[0];
+    $("#s1Inner").style.transform="scale("+(1+0.035*seg(t,SC.s1[0],SC.s1[1]))+")";
+    rise($("#s1Eyebrow"),seg(u,0.30,0.90),26);
+    rise($("#s1L1"),seg(u,0.50,1.25),46);
+    rise($("#s1L2"),seg(u,0.68,1.43),46);
+    rise($("#s1Sub"),seg(u,1.30,2.00),30);
+    rise($("#s1Hint"),seg(u,1.70,2.40),18);
+  }
+
+  /* ---------- S2 ---------- */
+  const o2=sceneVis($("#s2"),SC.s2,t,0.5);
+  if(o2>0){
+    const u=t-SC.s2[0];
+    /* cursor 960,860 -> app chip 1755,22 */
+    const p=eio(seg(u,0.35,1.60));
+    const cx=lerp(960,1755,p), cy=lerp(860,30,p);
+    $("#s2Cursor").style.transform="translate("+cx+"px,"+cy+"px)";
+    $("#s2AppChip").classList.toggle("hot",u>1.45);
+    const rp=seg(u,1.68,2.06);
+    $("#s2Ripple").style.opacity=(1-rp)*0.9;
+    $("#s2Ripple").style.transform="translate("+(1755-8+ (1-1)*0)+"px,"+(14)+"px) scale("+(0.4+rp*3.2)+")";
+    $("#s2Ripple").style.left=(1755-8)+"px"; $("#s2Ripple").style.top=(16-8)+"px";
+    /* panel */
+    const pp=eo(seg(u,1.78,2.42));
+    const pn=$("#s2Panel");
+    pn.style.opacity=pp;
+    pn.style.transform="scale("+(0.92+0.08*pp)+") translateY("+((1-pp)*-10)+"px)";
+    pn.style.visibility=pp>0.001?"visible":"hidden";
+    /* rows stagger: groups then rows */
+    modGroups.forEach((g,i)=>{const gp=seg(u,2.30+i*0.12,2.66+i*0.12);
+      g.style.opacity=eo(gp); g.style.transform="translateY("+((1-eo(gp))*10)+"px)";});
+    let ri=0,acc=2.42;
+    for(const g of modGroups){
+      const rows=Array.from(g.nextElementSibling ? [] : []);
+    }
+    /* simple flat stagger over all rows in DOM order */
+    modRows.forEach((r,i)=>{const rp2=eo(seg(u,2.55+i*0.05,2.95+i*0.05));
+      r.style.opacity=rp2; r.style.transform="translateY("+((1-rp2)*8)+"px)";});
+    rise($("#s2Cap"),seg(u,3.60,4.30),30);
+    rise($("#s2Mark"),seg(u,2.20,2.90),24);
+    rise($("#s2MarkSub"),seg(u,2.45,3.10),18);
+  }
+
+  /* ---------- features common ---------- */
+  const FEATS=[["#f1",SC.f1],["#f2",SC.f2],["#f3",SC.f3],["#f4",SC.f4],["#f5",SC.f5],["#f6",SC.f6]];
+  let anyFeat=false;
+  FEATS.forEach(([sel,range],fi)=>{
+    const el=$(sel), o=sceneVis(el,range,t,0.45);
+    if(o>0){
+      anyFeat=true;
+      const u=t-range[0];
+      const txt=el.querySelector(".featText"), card=el.querySelector(".featCard");
+      const cp=eb(seg(u,0.05,0.62));
+      card.style.opacity=clamp(cp,0,1);
+      card.style.transform="translateY("+((1-Math.min(cp,1))*40)+"px) scale("+(0.94+0.06*Math.min(cp,1))+")";
+      card.style.visibility=cp>0.001?"visible":"hidden";
+      rise(txt.querySelector(".fIndex"),seg(u,0.28,0.75),22);
+      rise(txt.querySelector(".fTitle"),seg(u,0.38,0.95),34);
+      rise(txt.querySelector(".fSub"),seg(u,0.52,1.10),26);
+      const kb=txt.querySelector(".kbd");
+      if(kb){rise(kb,seg(u,0.66,1.22),20); pressKeys(t,u,Array.from(kb.querySelectorAll(".key")));}
+    }
+  });
+  opac($("#watermark"), anyFeat?0.55*anyFeatOn(t):0);
+  function anyFeatOn(t){return 1;}
+
+  /* ---------- F1 BLE ---------- */
+  if($("#f1").style.visibility==="visible"){
+    const u=t-SC.f1[0];
+    const px=u<2.15 ? lerp(-70,238,eio(seg(u,0.55,1.70))) : lerp(238,-90,eio(seg(u,2.45,3.30)));
+    $("#blePhone").style.transform="translateX("+px+"px)";
+    /* phone spans x: card-left 60..146 ; mac screen x 470..730 */
+    const near=clamp((px+40)/278,0,1);
+    const dist=(3.4-2.6*near).toFixed(1);
+    const unlocked=u>1.70 && u<2.45;
+    const left=u>=2.45;
+    const ring=$("#bleRing"), glow=$("#bleRingGlow");
+    ring.style.borderColor=unlocked?"rgba(200,250,117,0.85)":(left?"rgba(241,243,235,0.14)":"rgba(241,243,235,0.10)");
+    const pulse=0.5+0.5*Math.sin(t*4.2);
+    ring.style.transform="scale("+(1+(unlocked?0.02*pulse:0))+")";
+    glow.style.opacity=unlocked?0.8+0.2*pulse:(left?0.12:0.5*near);
+    $("#bleScreen").textContent=unlocked?"🔓":"🔒";
+    const st=$("#bleStatus");
+    if(u<1.70){opac(st,0);}
+    else if(u<2.45){st.textContent="已解锁";st.classList.remove("away");opac(st,eo(seg(u,1.74,2.02)));}
+    else{st.textContent="已锁定";st.classList.add("away");opac(st,eo(seg(u,2.55,2.80)));}
+    const sig=$("#bleSig");
+    sig.style.opacity=(u>0.9&&u<2.5)?0.75:0;
+    sig.setAttribute("width","340");sig.setAttribute("height","24");
+    sig.innerHTML='<line x1="0" y1="12" x2="340" y2="12" stroke="#c8fa75" stroke-width="2" stroke-dasharray="7 9" stroke-linecap="round" opacity="0.7"/>';
+    $("#bleDist").textContent="距离 "+dist+" m";
+  }
+
+  /* ---------- F2 clipboard ---------- */
+  if($("#f2").style.visibility==="visible"){
+    const u=t-SC.f2[0];
+    const panel=$("#clipPanel");
+    const pp=eo(seg(u,0.50,0.92));
+    panel.style.opacity=pp;
+    panel.style.transform="translateY("+((1-pp)*18)+"px)";
+    panel.style.visibility=pp>0.001?"visible":"hidden";
+    clipRows.forEach((r,i)=>{const p=eo(seg(u,0.85+i*0.10,1.25+i*0.10));
+      r.style.opacity=p; r.style.transform="translateY("+((1-p)*12)+"px)";});
+    const sel=clipRows[2];
+    sel.classList.toggle("sel",u>1.80&&u<2.20);
+    /* fly from RGB row to caret */
+    const fp=seg(u,2.20,2.58);
+    const fly=$("#clipFly");
+    if(fp>0&&fp<1){
+      const sx=202, sy=260+54+44*2;         /* RGB row centre inside panel */
+      const ex=142, ey=228-20;              /* caret position in card coords */
+      const k=eio(fp);
+      fly.style.opacity=1;
+      fly.style.left=lerp(sx,ex,k)+"px";
+      fly.style.top=lerp(sy,ey,k)+"px";
+      fly.style.transform="scale("+lerp(1,0.86,k)+")";
+    } else fly.style.opacity=0;
+    /* caret + typing */
+    const caret=$("#clipCaret");
+    const typed=u>2.58;
+    const chars=typed?Math.min(23,Math.floor((u-2.58)/0.035)):0;
+    $("#clipPasteLine").textContent="macpilot.liuguofeng.com".slice(0,chars);
+    /* caret is positioned relative to #clipEditor */
+    caret.style.left="22px"; caret.style.top="148px";
+    caret.style.opacity=(Math.sin(t*7)>0?1:0.15);
+    rise($("#clipCount"),seg(u,1.00,1.40),16);
+  }
+
+  /* ---------- F3 switcher ---------- */
+  if($("#f3").style.visibility==="visible"){
+    const u=t-SC.f3[0];
+    const bp=eo(seg(u,0.30,0.90));
+    $("#swBar").style.opacity=bp;
+    $("#swBar").style.transform="translateY("+((1-bp)*30)+"px)";
+    $("#swPreview").style.opacity=bp;
+    $("#swPreview").style.transform="scale("+(0.96+0.04*bp)+")";
+    const selIdx=u<1.15?0:(u<1.75?1:2);
+    swTiles.forEach((tile,i)=>{
+      tile.style.transform="scale("+(i===selIdx?1.07:1)+")";
+      tile.style.opacity=(i===selIdx)?1:0.55;
+    });
+    swPrevs.forEach((p,i)=>{p.style.opacity=i===selIdx?1:0;});
+    const sel=$("#swSel");
+    const tx=110+(640-4*112-3*22)/2 + selIdx*(112+22) - 4;
+    const ty=390+(150-124)/2-2;
+    const sk=eio(seg(u, u<1.15?1.02:0, u<1.15?1.14:(u<1.75?1.62:1.74)));
+    sel.style.opacity=u>0.95?1:0;
+    sel.style.transform="translate("+tx+"px,"+ty+"px) scale("+(u>2.35?0:1)+")";
+    /* tab key flash per step */
+    const keys=$("#swKbd").querySelectorAll(".key");
+    keys.forEach((k,i)=>k.classList.toggle("lit", (u>1.02&&u<1.14)||(u>1.62&&u<1.74)||(u>2.22&&u<2.34)&&i>=0));
+    const commit=eo(seg(u,2.45,2.95));
+    $("#swPreview").style.opacity=bp*(1-commit);
+    $("#swDone").style.opacity=commit;
+    $("#swDone").style.transform="scale("+(0.92+0.08*commit)+")";
+    $("#swBar").style.opacity=bp*(1-seg(u,2.45,2.75));
+    sel.style.opacity=u>2.45?0:(u>0.95?1:0);
+    const chip=$("#swChip");
+    chip.textContent="已切换到 终端";
+    rise(chip,seg(u,2.85,3.20),14);
+  }
+
+  /* ---------- F4 capture ---------- */
+  if($("#f4").style.visibility==="visible"){
+    const u=t-SC.f4[0];
+    /* dims relative to marquee rect inside card coords */
+    const mx0=lerp(210,215,0), my0=lerp(160,165,0);
+    const g=eo(seg(u,1.00,1.55));
+    const mx=210,my=160,mw=270*g,mh=170*g;
+    const m=$("#shMarq");
+    m.style.left=mx+"px";m.style.top=my+"px";m.style.width=mw+"px";m.style.height=mh+"px";
+    m.style.opacity=u>0.95?1:0;
+    const d=g*0.55*(1-seg(u,1.60,1.85));   /* dim while selecting, gone after the flash */
+    $("#dimT").style.background="rgba(6,8,4,"+d+")"; $("#dimB").style.background="rgba(6,8,4,"+d+")";
+    $("#dimL").style.background="rgba(6,8,4,"+d+")"; $("#dimR").style.background="rgba(6,8,4,"+d+")";
+    setBox($("#dimT"),0,0,860,my);
+    setBox($("#dimB"),0,my+mh,860,640-my-mh);
+    setBox($("#dimL"),0,my,mx,mh);
+    setBox($("#dimR"),mx+mw,my,860-mx-mw,mh);
+    /* crosshair */
+    const c1=eio(seg(u,0.45,0.85));
+    $("#shCross").style.opacity=u>0.45&&u<1.55?1:0;
+    $("#shCross").style.transform="translate("+lerp(80,210,c1)+"px,"+lerp(50,160,c1)+"px)";
+    /* flash */
+    const fl=seg(u,1.55,1.62), fl2=seg(u,1.62,1.85);
+    $("#shFlash").style.opacity=fl*0.9*(1-fl2);
+    /* thumb pop */
+    const tp=eb(seg(u,1.75,2.25));
+    const th=$("#shThumb");
+    th.style.opacity=clamp(tp,0,1);
+    th.style.transform="scale("+(0.7+0.3*Math.min(tp,1))+")";
+    th.style.visibility=tp>0.001?"visible":"hidden";
+    /* arrow draw */
+    const ap=seg(u,2.30,2.85);
+    $("#shArrow").style.opacity=ap>0?1:0;
+    $("#shArrowPath").style.strokeDashoffset=String(180*(1-ap));
+    rise($("#shChip"),seg(u,2.90,3.25),14);
+  }
+
+  /* ---------- F5 awake ---------- */
+  if($("#f5").style.visibility==="visible"){
+    const u=t-SC.f5[0];
+    const on=eb(seg(u,0.45,0.95));
+    $("#awToggle").style.background=on>0.5?"#c8fa75":"#3a3e33";
+    $("#awKnob").style.left=(8+74*Math.min(Math.max(on,0),1))+"px";
+    const prog=eo(seg(u,0.95,3.30));
+    $("#awProg").style.strokeDashoffset=String(AW_C*(1-0.72*prog));
+    $("#awEmoji").style.transform="translateX(-50%) translateY("+(Math.sin(t*2.1)*7)+"px)";
+    const remain=Math.max(0, 7200-(u-0.95)*1750);
+    $("#awCount").innerHTML="剩余 <b>"+fmtHMS(remain)+"</b>";
+    rise($("#awChipL"),seg(u,1.35,1.75),14);
+    rise($("#awChipR"),seg(u,1.65,2.05),14);
+  }
+
+  /* ---------- F6 quit ---------- */
+  if($("#f6").style.visibility==="visible"){
+    const u=t-SC.f6[0];
+    let freed=0;
+    QWINS.forEach((w,i)=>{
+      const rp=1-seg(u,w.a,w.b);          // ring remaining
+      $("#qr"+i).style.strokeDashoffset=String(Q_C*(1-rp));
+      const gone=eo(seg(u,w.b+0.12,w.b+0.42));
+      const el=$("#qw"+i);
+      el.style.opacity=(1-gone)*eo(seg(u,0.15+i*0.12,0.55+i*0.12));
+      el.style.transform="scale("+(1-0.15*gone)+")";
+      const frac=1/3;
+      freed+=clamp(seg(u,w.b+0.12,w.b+0.42),0,1)*frac;
+    });
+    const gb=(freed*2.398).toFixed(1);
+    $("#qMem").innerHTML="<small>已释放</small><b>"+gb+" GB</b>";
+    rise($("#qChip"),seg(u,3.00,3.35),14);
+  }
+
+  /* ---------- S9 ticker ---------- */
+  const o9=sceneVis($("#s9"),SC.s9,t,0.4);
+  if(o9>0){
+    const u=t-SC.s9[0];
+    if(!marqW) marqW=$("#s9Track").scrollWidth/3;
+    if(!marqW2) marqW2=$("#s9Track2").scrollWidth/3;
+    rise($("#s9Eyebrow"),seg(u,0.10,0.55),20);
+    $("#s9Track").style.transform="translateX("+(-((u*230)%marqW))+"px)";
+    $("#s9Track2").style.transform="translateX("+(-marqW2+((u*150)%marqW2))+"px)";
+    rise($("#s9Sub"),seg(u,0.45,0.95),22);
+  }
+
+  /* ---------- S10 why ---------- */
+  const o10=sceneVis($("#s10"),SC.s10,t,0.4);
+  if(o10>0){
+    const u=t-SC.s10[0];
+    rise($("#s10Head"),seg(u,0.10,0.55),20);
+    whyTiles.forEach((w,i)=>{
+      const p=eb(seg(u,0.28+i*0.13,0.90+i*0.13));
+      w.style.opacity=clamp(p,0,1);
+      w.style.transform="translateY("+((1-Math.min(p,1))*44)+"px)";
+    });
+  }
+
+  /* ---------- S11 outro ---------- */
+  const o11=sceneVis($("#s11"),SC.s11,t,0.5);
+  if(o11>0){
+    const u=t-SC.s11[0];
+    const ip=eb(seg(u,0.15,0.85));
+    const ic=$("#s11Icon");
+    ic.style.opacity=clamp(ip,0,1);
+    ic.style.transform="scale("+(0.6+0.4*Math.min(ip,1))+")";
+    rise($("#s11Word"),seg(u,0.45,1.05),36);
+    rise($("#s11Tag"),seg(u,0.62,1.22),26);
+    rise($("#s11Cta"),seg(u,0.95,1.55),30);
+    rise($("#s11Url"),seg(u,1.25,1.80),20);
+    rise($("#s11Meta"),seg(u,1.42,1.95),18);
+    rise($("#s11Footer"),seg(u,1.70,2.25),16);
+    $("#s11CtaShine").style.left=(-160+520*seg(u,1.85,2.55))+"px";
+  }
+
+  /* global end fade */
+  $("#fadeBlack").style.opacity=seg(t,41.2,42.0);
+}
+
+window.__READY=false;
+renderFrame(0);
+window.renderFrame=renderFrame;
+window.__READY=true;
+</script>
+</body>
+</html>
