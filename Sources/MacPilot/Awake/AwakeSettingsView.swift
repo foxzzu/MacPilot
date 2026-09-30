@@ -1100,7 +1100,9 @@ struct AwakeMenuView: View {
     let openSettings: () -> Void
 
     var body: some View {
-        Group {
+        // Keep Awake to one row in the main menu, regardless of session,
+        // profile or trigger count. Details and actions live in this submenu.
+        Menu {
             if awake.isActive {
                 Text(statusText)
                     .foregroundStyle(.secondary)
@@ -1161,7 +1163,16 @@ struct AwakeMenuView: View {
             }
 
             Button(model.t("awakeOpenSettings"), action: openSettings)
+        } label: {
+            Label(model.t("awake"), systemImage: menuIcon)
         }
+    }
+
+    private var menuIcon: String {
+        if awake.lastAssertionFailure != nil || awake.lastClosedLidFailure != nil {
+            return "exclamationmark.triangle"
+        }
+        return awake.isKeepingAwake ? "sun.max.fill" : "moon.zzz"
     }
 
     private var statusText: String {
