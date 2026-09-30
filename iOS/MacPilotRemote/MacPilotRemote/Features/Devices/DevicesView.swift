@@ -4,16 +4,26 @@ import SwiftUI
 struct DevicesView: View {
     @EnvironmentObject private var appModel: RemoteAppModel
     @State private var pendingRemoval: PairedMac?
+    @State private var showsAddressSheet = false
+    @State private var host = ""
+    @State private var port = "43847"
+
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Button { showsAddressSheet = true } label: {
+                        Label(appModel.text("manualAdd"), systemImage: "plus")
+                    }
+                }
                 pairedSection
                 discoveredSection
             }
             .listStyle(.insetGrouped)
             .navigationTitle(appModel.text("devicesTitle"))
             .navigationBarTitleDisplayMode(.large)
+            .sheet(isPresented: $showsAddressSheet) { addressSheet }
             .confirmationDialog(
                 appModel.text("forgetConfirmTitle"),
                 isPresented: Binding(
@@ -29,6 +39,42 @@ struct DevicesView: View {
                 Button(appModel.text("pairingCancel"), role: .cancel) { pendingRemoval = nil }
             } message: {
                 Text(appModel.text("forgetConfirmMessage"))
+            }
+        }
+    }
+
+    private var addressSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(appModel.text("manualHost"), text: $host)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    TextField(appModel.text("manualPort"), text: $port)
+                        .keyboardType(.numberPad)
+                } footer: {
+                    Text(appModel.text("manualHint"))
+                }
+                Section {
+                    Button(appModel.text("manualConnect")) {
+                        guard let address = ManualMacAddress(host: host, port: port) else { return }
+                        showsAddressSheet = false
+                        appModel.connect(to: address)
+                    }
+                    .disabled(ManualMacAddress(host: host, port: port) == nil)
+                } footer: {
+                    if ManualMacAddress(host: host, port: port) == nil {
+                        Text(appModel.text("manualInvalid"))
+                    }
+                }
+            }
+            .navigationTitle(appModel.text("manualAdd"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(appModel.text("pairingCancel")) { showsAddressSheet = false }
+                }
             }
         }
     }
@@ -127,6 +173,7 @@ struct DevicesView: View {
                 if let errorKey = appModel.errorKey {
                     Text(appModel.text(errorKey))
                         .foregroundStyle(.orange)
+                    Button(appModel.text("retry")) { appModel.retry() }
                 } else {
                     Text(appModel.text("pairingConnecting"))
                         .foregroundStyle(.secondary)

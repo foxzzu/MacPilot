@@ -154,6 +154,7 @@ final class RemoteAppModel: ObservableObject {
     /// A Mac the user tapped in Devices that is not in the paired store yet, so
     /// it cannot be reached through `activeMac`.
     private var pairingTarget: DiscoveredMac?
+    private var manualTarget: ManualMacAddress?
     /// Every dial still in flight. `connection` is never one of these.
     private var candidates: [Candidate] = []
     private var activeMethod: RemoteConnectionMethod?
@@ -368,8 +369,14 @@ final class RemoteAppModel: ObservableObject {
         manager.onFailure = { [weak self, weak manager] error in
             guard let self, let manager else { return }
             guard self.isCurrent(manager) else {
+                guard self.candidates.contains(where: { $0.manager === manager }) else { return }
                 self.raceLog("race: \(path.rawValue) failed (\(error.messageKey))")
                 self.removeCandidate(manager)
+                if self.manualTarget != nil {
+                    self.errorKey = error.messageKey
+                    self.connectionState = .failed(self.text(error.messageKey))
+                    self.stopConnectSupervisor()
+                }
                 return
             }
             self.errorKey = error.messageKey
@@ -455,7 +462,7 @@ final class RemoteAppModel: ObservableObject {
 
     /// Advertise while disconnected or while Bluetooth can improve the current link.
     private func startBLEFallback() {
-        guard isForeground, shouldTry(.bluetooth) else { return }
+        guard manualTarget == nil, isForeground, shouldTry(.bluetooth) else { return }
         ble.start()
         bleFallbackAdvertising = ble.isAdvertising
     }
@@ -471,7 +478,7 @@ final class RemoteAppModel: ObservableObject {
     /// slowest one.
     private func adoptBLEChannel(_ channel: CBL2CAPChannel) {
         bleFallbackAdvertising = ble.isAdvertising
-        guard shouldTry(.bluetooth) else {
+        guard manualTarget == nil, shouldTry(.bluetooth) else {
             close(channel)
             return
         }
@@ -665,6 +672,7 @@ final class RemoteAppModel: ObservableObject {
     /// Once a long term key exists the proof is computed per connection from the
     /// shared secret, and racing is safe again.
     private var isRacingFirstPairing: Bool {
+        if manualTarget != nil { return true }
         guard let target = raceTarget else { return false }
         return !RemoteKeychain.hasPairingKey(for: target.deviceID.uuidString)
     }
@@ -674,6 +682,11 @@ final class RemoteAppModel: ObservableObject {
         guard candidates.isEmpty, !isBLEDiagnosticRun else { return }
         errorKey = nil
         if !discovery.isBrowsing { discovery.start() }
+        if let manualTarget {
+            addCandidate(path: .remembered, transport: NetworkRemoteTransport(to: manualTarget.endpoint),
+                         deviceID: nil, name: manualTarget.host)
+            return
+        }
         guard let target = raceTarget else {
             connectionState = .discovering
             return
@@ -714,6 +727,9 @@ final class RemoteAppModel: ObservableObject {
                 method = .localNetwork
             }
             endpoints.append((method, remembered))
+        }
+        if let manual = store.mac(id: target.deviceID)?.manualEndpoint {
+            endpoints.append((.localNetwork, manual))
         }
         for (method, endpoint) in endpoints where shouldTry(method) {
             let path: RacePath = method == .awdl ? .awdl : .localNetwork
@@ -855,6 +871,8 @@ final class RemoteAppModel: ObservableObject {
     }
 
     private func handleConnected(deviceID: UUID, name: String, endpoint: RemoteConnectionManager.ResolvedEndpoint) {
+        let enteredAddress = manualTarget
+        manualTarget = nil
         let wasPairing = pairingTarget != nil
         hasEverConnected = true
         pairingTarget = nil
@@ -880,6 +898,11 @@ final class RemoteAppModel: ObservableObject {
         // existing entry. Pairing itself writes nothing here, so a Mac would
         // otherwise stay listed as new forever and never become the default.
         store.ensurePaired(id: deviceID, name: name)
+        if let enteredAddress, var mac = store.mac(id: deviceID) {
+            mac.manualHost = enteredAddress.host
+            mac.manualPort = enteredAddress.port
+            store.upsert(mac)
+        }
         store.markConnected(
             id: deviceID,
             endpoint: NWEndpointSnapshot(
@@ -924,6 +947,17 @@ final class RemoteAppModel: ObservableObject {
         startConnectSupervisor()
     }
 
+    /// Identity is learned from the authenticated handshake, never from the entered address.
+    func connect(to address: ManualMacAddress) {
+        resetConnectionForTarget()
+        manualTarget = address
+        pairingTarget = DiscoveredMac(id: UUID(), name: address.host, endpoint: address.endpoint,
+                                      version: "", protocolVersion: RemoteProtocolVersion.current, capabilities: [])
+        activeMac = nil
+        connectionState = .connecting
+        startConnectSupervisor()
+    }
+
     var pairingTargetID: UUID? { pairingTarget?.id }
 
     func connect(to mac: PairedMac) {
@@ -939,6 +973,7 @@ final class RemoteAppModel: ObservableObject {
     }
 
     private func resetConnectionForTarget() {
+        manualTarget = nil
         stopConnectSupervisor()
         stopBLEFallback()
         cancelCandidates()

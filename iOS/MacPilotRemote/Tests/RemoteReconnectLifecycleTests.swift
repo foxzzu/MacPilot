@@ -264,6 +264,33 @@ struct RemoteReconnectLifecycleTests {
         try await waitForConnected(model, timeout: 20, server: server, stage: "reconnect after foreground")
     }
 
+    @Test func manualAddressPairsAndReconnectsAfterLanAddressChanges() async throws {
+        let suiteName = "manual-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PairedMacStore(defaults: defaults)
+        let server = MockMacServer()
+        try await server.start()
+        defer { server.stop() }
+        defer { RemoteKeychain.deletePairingKey(for: server.deviceID.uuidString) }
+        let model = RemoteAppModel(store: store)
+        await model.start()
+        let address = try #require(ManualMacAddress(host: "localhost", port: String(server.port)))
+        model.connect(to: address)
+        try await waitForConnected(model, timeout: 15, server: server, stage: "manual pairing")
+        var mac = try #require(store.mac(id: server.deviceID))
+        #expect(mac.manualHost == "localhost")
+        #expect(mac.manualPort == server.port)
+        #expect(store.preferredMacID == server.deviceID.uuidString)
+        model.handleScenePhase(.background)
+        mac.lastHost = "127.0.0.2"
+        store.upsert(mac)
+        model.handleScenePhase(.active)
+        try await waitForConnected(model, timeout: 15, server: server, stage: "manual reconnect")
+        #expect(store.mac(id: server.deviceID)?.manualHost == "localhost")
+        model.handleScenePhase(.background)
+    }
+
     /// Fails once `connectionState` has not reached `.connected` in time, and
     /// dumps both the phone's race trace and the mock Mac's wire log so the
     /// stalled stage is visible without a debugger.

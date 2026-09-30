@@ -34,6 +34,31 @@ struct RemoteConnectionHandshakeTests {
         #expect(try transport.sentMessages().map(\.kind) == [.clientHello, .pairRequest])
         manager.disconnect(report: false)
     }
+    @Test func directAddressLearnsIdentityBeforeRequestingPairing() throws {
+        let transport = HandshakeTransport()
+        let manager = RemoteConnectionManager()
+        var failure: RemoteConnectionError?
+        manager.onFailure = { failure = $0 }
+        manager.connect(using: transport, deviceID: nil, name: "100.64.0.1",
+                        clientID: UUID().uuidString, clientName: "Phone", allowsPairing: true)
+        try transport.receiveUnpairedHello(deviceID: UUID())
+        #expect(failure == nil)
+        #expect(try transport.sentMessages().map(\.kind) == [.clientHello, .pairRequest])
+        manager.disconnect(report: false)
+    }
+
+    @Test func rememberedAddressRejectsAnotherMacIdentity() throws {
+        let transport = HandshakeTransport()
+        let manager = RemoteConnectionManager()
+        var failure: RemoteConnectionError?
+        manager.onFailure = { failure = $0 }
+        manager.connect(using: transport, deviceID: UUID(), name: "Mac",
+                        clientID: UUID().uuidString, clientName: "Phone", allowsPairing: false)
+        try transport.receiveUnpairedHello(deviceID: UUID())
+        #expect(failure == .authenticationFailed)
+        #expect(!manager.isReady)
+    }
+
 }
 
 @MainActor
@@ -66,5 +91,33 @@ private final class HandshakeTransport: RemoteTransport {
             kind: .serverHello, deviceID: deviceID, paired: false,
             serverNonce: nonce, publicKey: exchange.publicKeyData
         )))
+    }
+}
+
+struct ManualMacAddressTests {
+    @Test func acceptsRoutedAddressesAndNormalizesWhitespace() {
+        #expect(ManualMacAddress(host: " 100.64.0.1 ", port: " 43847 ")?.host == "100.64.0.1")
+        #expect(ManualMacAddress(host: "mac.tailnet.ts.net", port: "65535") != nil)
+        #expect(ManualMacAddress(host: "[fd7a:115c:a1e0::1]", port: "1")?.host == "fd7a:115c:a1e0::1")
+    }
+    @Test func rejectsURLsEmbeddedPortsAndInvalidPorts() {
+        for host in ["", "https://mac", "mac:43847", "mac/path", "bad host", "-mac", "mac..net"] {
+            #expect(ManualMacAddress(host: host, port: "43847") == nil)
+        }
+        for port in ["0", "65536", "-1", "abc", ""] {
+            #expect(ManualMacAddress(host: "mac", port: port) == nil)
+        }
+    }
+    @Test func oldPairedMacStillDecodesAndKeepsManualHostname() throws {
+        let old = Data("{\"id\":\"\(UUID().uuidString)\",\"name\":\"Mac\"}".utf8)
+        var mac = try JSONDecoder().decode(PairedMac.self, from: old)
+        #expect(mac.manualEndpoint == nil)
+        mac.manualHost = "mac.tailnet.ts.net"
+        mac.manualPort = 43847
+        mac.lastHost = "192.168.1.2"
+        mac.lastPort = 43847
+        let roundTrip = try JSONDecoder().decode(PairedMac.self, from: JSONEncoder().encode(mac))
+        #expect(roundTrip.manualHost == "mac.tailnet.ts.net")
+        #expect(roundTrip.manualEndpoint != roundTrip.rememberedEndpoint)
     }
 }

@@ -8,7 +8,7 @@ security model, and how to build the companion iOS app.
 
 | Goal | How |
 | --- | --- |
-| No IP or port entry | Bonjour (`_macpilot._tcp`) discovery plus a remembered address for the fast path |
+| Automatic local discovery, optional direct address | Bonjour (`_macpilot._tcp`) plus remembered addresses; Devices → Add Mac by IP / hostname for routed networks |
 | No re-pairing | A long lived pairing key in the Keychain on both sides; only the very first connection shows a 6 digit code |
 | Fast connect (< 500 ms typical) | Bonjour, the remembered address and Bluetooth are dialled at the same time; the first authenticated link is usable immediately and higher-priority links can take over |
 | No IP scanning, no UDP broadcast, no HTTP | `NWBrowser` + `NWListener` on `NWParameters.tcp` |
@@ -528,3 +528,26 @@ PilotNest’s Remote control entry combines an independent encrypted H.264 scree
 channel with the existing trackpad and keyboard. LAN/AWDL carry video; Bluetooth
 keeps input only. See [the implementation and validation report](REMOTE_DESKTOP.md)
 for the video wire format, lifecycle, compatibility gates and measurement limits.
+
+## Direct addresses and Tailscale
+
+In PilotNest, open Devices → Add Mac by IP / hostname and enter the Mac's
+Tailscale IP or MagicDNS hostname and TCP port (normally 43847). Both devices
+must have Tailscale enabled and the tailnet policy and Mac firewall must allow
+access. Bonjour discovery does not traverse the tailnet. The Mac must be awake
+and MacPilot Remote Control enabled; Tailscale does not wake a sleeping host.
+
+Direct connections use the existing authenticated handshake and pairing code.
+The server identity is learned from that handshake, and the address is saved
+only after authentication succeeds. The manually entered hostname and port are
+stored separately from the last resolved address, so LAN connections do not
+overwrite the routed endpoint. Subsequent connections race this endpoint with
+existing paths and check the saved Mac identity. Re-enter an address to change
+it; forgetting the Mac removes its saved addresses and pairing key.
+
+Remote desktop video opens an additional dynamically assigned TCP port on the
+same Mac; policies allowing only TCP 43847 permit control but can block video.
+Allow the video connection as well when using remote desktop. Real-device
+acceptance: pair via Tailscale, move the phone to cellular, reconnect, test
+trackpad and video, then connect over LAN and confirm the manual address still
+works after returning to cellular. Test both direct and relayed tailnet paths.

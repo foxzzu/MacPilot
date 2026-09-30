@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import MacPilotRemoteProtocol
 import Network
@@ -24,6 +25,13 @@ struct PairedMac: Codable, Identifiable, Equatable {
     var lastHost: String?
     var lastPort: UInt16?
     var lastConnectedAt: Date?
+    var manualHost: String?
+    var manualPort: UInt16?
+
+    var manualEndpoint: NWEndpoint? {
+        guard let manualHost, let manualPort, let port = NWEndpoint.Port(rawValue: manualPort) else { return nil }
+        return .hostPort(host: NWEndpoint.Host(manualHost), port: port)
+    }
 
     var deviceID: UUID? { UUID(uuidString: id) }
 
@@ -173,4 +181,30 @@ extension RemoteErrorCode {
         case .internalError: return "errorInternal"
         }
     }
+}
+
+/// A user-entered host and explicit TCP port; no URL schemes or embedded ports.
+struct ManualMacAddress: Equatable {
+    let host: String
+    let port: UInt16
+
+    init?(host: String, port: String) {
+        var host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        guard let port = UInt16(port.trimmingCharacters(in: .whitespacesAndNewlines)), port > 0 else { return nil }
+        var ipv4 = in_addr()
+        var ipv6 = in6_addr()
+        let isIP = host.withCString { inet_pton(AF_INET, $0, &ipv4) == 1 || inet_pton(AF_INET6, $0, &ipv6) == 1 }
+        let dnsHost = host.hasSuffix(".") ? String(host.dropLast()) : host
+        let labels = dnsHost.split(separator: ".", omittingEmptySubsequences: false)
+        let isDNS = dnsHost.utf8.count <= 253 && labels.allSatisfy { label in
+            !label.isEmpty && label.utf8.count <= 63 && label.first != "-" && label.last != "-"
+                && label.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
+        }
+        guard isIP || isDNS else { return nil }
+        self.host = host
+        self.port = port
+    }
+
+    var endpoint: NWEndpoint { .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!) }
 }
