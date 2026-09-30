@@ -1,0 +1,7 @@
+{
+  "description": "PilotNest 是 MacPilot 的 iPhone 和 iPad 遥控器。通过局域网连接 Mac，查看远程画面、模拟鼠标触控板和输入文字，还可锁屏、黑屏、解锁或唤醒解锁。近距离没有 Wi-Fi 时，可使用蓝牙保底链路控制；蓝牙不传输远程画面。\n\n主要功能\n• 实时远程画面与双指捏合缩放\n• 相对鼠标触控板、拖拽、多指滚动和压力模拟\n• 远程键盘输入与常用快捷键\n• 一键锁屏 / 黑屏 / 解锁 / 唤醒解锁\n• 多台 Mac 管理、自动发现和 IP / 域名连接\n• 可通过两端已配置的 Tailscale 网络连接异地 Mac\n• 6 位配对码完成首次配对，配对后通信加密\n\n使用前提\n需要在 Mac 上安装 MacPilot，并启用远程控制。远程画面需要屏幕录制权限，鼠标与键盘控制需要辅助功能权限：\nhttps://github.com/misswell/MacPilot\n\n隐私说明\nPilotNest 不收集用户数据。控制通信在配对设备之间加密传输，Mac 的登录密码保存在 Mac 上，不会传输到手机。",
+  "keywords": "mac,锁屏,解锁,黑屏,远程,遥控,唤醒,电脑,专注,助手",
+  "marketingUrl": "https://github.com/misswell/MacPilot",
+  "supportUrl": "https://github.com/misswell/MacPilot/issues",
+  "whatsNew": "• 远程画面支持双指捏合缩放，并可一键还原\n• 画面和下方区域统一模拟鼠标触控板，键盘展开或收起都可操作鼠标\n• 支持通过 IP 或域名添加 Mac，可使用 Tailscale IP 和 MagicDNS 地址"
+}

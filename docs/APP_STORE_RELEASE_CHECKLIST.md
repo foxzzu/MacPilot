@@ -16,7 +16,7 @@ Apple 邮件针对 PilotNest（App ID `6811335132`）、版本 `1.2.0`、构建 
 
 诊断时曾检查到其他构建的开发签名 archive；该证据不能用于断言构建 20 的最终 IPA 使用了开发签名。Xcode 可以在 export 阶段重新签名，因此最终 IPA 才是上传前检查对象。
 
-后续构建 26（1.2.0）的最终 IPA 已通过本机签名检查和 Apple 处理检查（VALID），并已重新提交审核。2026-09-28 核对时状态为 WAITING_FOR_REVIEW；这不等于已经获准上架。
+后续构建 26（1.2.0）的最终 IPA 已通过本机签名检查和 Apple 处理检查（VALID），并已重新提交审核。2026-09-28 核对时状态为 WAITING_FOR_REVIEW；2026-10-01 已通过 API 确认 1.2.0 上架。
 
 ## 当前项目配置
 
@@ -61,3 +61,13 @@ MacPilot 的 Developer ID + notarization 是 **macOS App Store 外**分发流程
 - [Create an App Store provisioning profile](https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile)：App Store profile 包含分发证书，Xcode 自动签名可管理分发 profile。
 - [TN3125: Inside Code Signing: Provisioning Profiles](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles)：解释 profile 的证书、身份和 entitlement 授权关系。
 - [Distribution methods](https://help.apple.com/xcode/mac/current/en.lproj/dev31de635e5.html)：区分 App Store Connect 与 Developer ID 分发。
+
+## 2026-10-01：1.2.1 / 构建 27 发布检查
+
+- 最终 IPA：`/tmp/PilotNest-1.2.1-27.ipa`；bundle/team/版本/构建号均核对一致。
+- Xcode 自动导出因本机未登录账户失败，本次使用临时手动导出参数；仓库仍保留自动签名配置。已重新验证本机分发私钥可用、profile 与 signer DER 一致、账户证书仍有效。
+- IPA SHA-256：`aaf5dfc93ef85432b43649d52bc20d9440e76655609a2babdfa7e47446b009d3`。
+- Signer SHA-256：`62e7580e4e86da3c0c5a015e89f2074bb8439ecc34148575ed3d88499a233704`；profile：`df12e579-3dec-4e63-b2df-86c5e2d37281`，有效至 `2027-07-20T01:28:32Z`。
+- `codesign --verify --deep --strict` 通过；App Store profile 无设备名单或企业分发标记，`get-task-allow=false`；签名 entitlements 全部获得 profile 授权。
+- Apple 构建 ID：`7cd09f01-51e5-4a12-8a15-562ed9437834`，处理状态为 `VALID`。
+- 版本已绑定构建 27，提交前检查为 0 errors / 0 warnings；通过 `--dry-run` 后正式提交，submission ID：`ae53cb79-f05f-4e53-aaf1-a99954985923`，状态 `WAITING_FOR_REVIEW`。这不代表 Apple 已批准。

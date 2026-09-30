@@ -10,6 +10,9 @@ struct RemoteDesktopView: View {
     @State private var showSettings = false
     @State private var showDiagnostics = false
     @State private var landscape = false
+    @State private var videoZoom = RemoteVideoZoom()
+    @State private var pinchBaseline = RemoteVideoZoom()
+    @State private var pinchStart = CGPoint.zero
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +29,9 @@ struct RemoteDesktopView: View {
                     } label: { Image(systemName: "display.2") }
                     .accessibilityLabel(appModel.text("desktopDisplay"))
                 }
+                Button { videoZoom = RemoteVideoZoom() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }
+                    .disabled(videoZoom.scale == 1)
+                    .accessibilityLabel(appModel.text("desktopResetZoom"))
                 Button { showDiagnostics.toggle() } label: { Image(systemName: "waveform.path") }
                     .accessibilityLabel(appModel.text("desktopDiagnostics"))
             }
@@ -59,6 +65,7 @@ struct RemoteDesktopView: View {
             desktop.open(appModel: appModel)
         }
         .onDisappear { appModel.desktopModifiers = 0; desktop.close() }
+        .onChange(of: desktop.displayID) { _, _ in videoZoom = RemoteVideoZoom() }
         .onChange(of: appModel.connectionGeneration) { _, _ in desktop.connectionChanged() }
         .onChange(of: appModel.connectionState) { _, _ in desktop.connectionChanged() }
         .onChange(of: trackpad.phase) { _, phase in
@@ -102,15 +109,27 @@ struct RemoteDesktopView: View {
     private var desktopSurface: some View {
         GeometryReader { geometry in
             let videoHeight = geometry.size.height * (trackpad.keyboardActive ? 0.85 : 0.45)
+            let viewport = CGSize(width: geometry.size.width, height: videoHeight)
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
-                    videoArea.frame(height: videoHeight)
+                    videoArea.frame(height: videoHeight).clipped()
                     Divider()
                     Spacer(minLength: 0)
                 }
                 .allowsHitTesting(false)
 
-                TrackpadView(model: trackpad)
+                TrackpadView(model: trackpad,
+                             pinchRegion: desktop.showingVideo ? CGRect(origin: .zero, size: viewport) : nil,
+                             onPinch: { state, factor, location in
+                    if state == .began {
+                        pinchBaseline = videoZoom
+                        pinchStart = location
+                    }
+                    if state == .began || state == .changed {
+                        videoZoom.update(from: pinchBaseline, factor: factor,
+                                         start: pinchStart, location: location, viewport: viewport)
+                    }
+                })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(trackpad.phase.isActiveLike)
                     .accessibilityLabel(appModel.text("trackpadTitle"))
@@ -125,6 +144,7 @@ struct RemoteDesktopView: View {
                     }
                 }
             }
+            .onChange(of: viewport) { _, size in videoZoom.constrain(to: size) }
         }
     }
 
@@ -142,6 +162,8 @@ struct RemoteDesktopView: View {
 
     private var videoArea: some View {
         RemoteVideoView(decoder: desktop.decoder)
+            .scaleEffect(videoZoom.scale)
+            .offset(videoZoom.offset)
             .overlay(alignment: .topLeading) {
                 if showDiagnostics {
                     VStack(alignment: .leading, spacing: 3) {
