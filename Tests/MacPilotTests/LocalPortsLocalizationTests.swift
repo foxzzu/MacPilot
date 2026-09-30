@@ -18,6 +18,8 @@ struct LocalPortsLocalizationTests {
         #expect(!AppText.value("localPortsCloseHint", language: .english).isEmpty)
         #expect(AppText.value("localPortsPort", language: .english, "3000") == "Port 3000")
         #expect(AppText.value("localPortsPID", language: .simplifiedChinese, "42") == "PID 42")
+        #expect(AppText.value("localPortsGroupPortCount", language: .simplifiedChinese, 2) == "2 个端口")
+        #expect(AppText.value("localPortsGroupPortCount", language: .english, 2) == "2 ports")
     }
 
     @Test func menuSubmenuCopyExistsInBothLanguages() {
@@ -40,6 +42,7 @@ struct LocalPortsLocalizationTests {
             "localPortsPortCount",
             "localPortsClosableCount",
             "localPortsLANCount",
+            "localPortsProtectedCount",
         ] {
             let chinese = AppText.value(key, language: .simplifiedChinese)
             let english = AppText.value(key, language: .english)
