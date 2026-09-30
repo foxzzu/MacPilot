@@ -11,7 +11,6 @@ struct LocalPortsView: View {
     @ObservedObject var model: LocalPortsModel
     @State private var protectedExpanded = false
     @State private var selectedActivity: LocalPortActivity?
-    @State private var autoRefresh = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -28,15 +27,11 @@ struct LocalPortsView: View {
             listControls
             activityList
         }
-        .onAppear {
+        .task {
             model.startVisibleSession()
-            if !autoRefresh { model.setAutoRefreshEnabled(false) }
         }
         .onDisappear {
             model.stopVisibleSession()
-        }
-        .onChange(of: autoRefresh) { _, enabled in
-            model.setAutoRefreshEnabled(enabled)
         }
         .onChange(of: model.query) { _, newValue in
             if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -121,10 +116,6 @@ struct LocalPortsView: View {
                 overviewValue(appModel.t("localPortsPortCount"), String(model.snapshot.portCount))
                 overviewValue(appModel.t("localPortsClosableCount"), String(model.snapshot.closablePortCount), tint: .green)
                 overviewValue(appModel.t("localPortsLANCount"), String(model.snapshot.lanPortCount), tint: .orange)
-                overviewValue(
-                    appModel.t("localPortsProtectedCount"),
-                    String(model.snapshot.portCount - model.snapshot.closablePortCount)
-                )
             }
             if model.snapshot.lanPortCount > 0 {
                 Text(appModel.t("localPortsLANWarning"))
@@ -178,15 +169,18 @@ struct LocalPortsView: View {
             Spacer(minLength: 16)
             TextField(appModel.t("localPortsSearch"), text: $model.query)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 180)
-            Toggle(appModel.t("autoRefresh"), isOn: $autoRefresh)
-                .toggleStyle(.switch)
-                .fixedSize()
+                .frame(width: 200)
             Button {
                 model.refreshNow()
             } label: {
-                Label(appModel.t("refreshNow"), systemImage: "arrow.clockwise")
+                if model.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label(appModel.t("localPortsRefresh"), systemImage: "arrow.clockwise")
+                }
             }
+            .disabled(model.isRefreshing)
             .fixedSize()
         }
         .padding(.horizontal, 36)
@@ -275,15 +269,17 @@ struct LocalPortsView: View {
     }
 
     private func row(_ group: LocalPortProcessGroup) -> some View {
-        LocalPortRow(group: group, model: model) { selectedActivity = $0 }
-            .environmentObject(appModel)
-            .listRowInsets(EdgeInsets(
-                top: 7,
-                leading: LocalPortsView.rowLeadingInset,
-                bottom: 7,
-                trailing: LocalPortsView.rowLeadingInset
-            ))
-            .listRowSeparator(.hidden)
+        LocalPortRow(group: group, model: model) {
+            selectedActivity = group.representative
+        }
+        .environmentObject(appModel)
+        .listRowInsets(EdgeInsets(
+            top: 7,
+            leading: LocalPortsView.rowLeadingInset,
+            bottom: 7,
+            trailing: LocalPortsView.rowLeadingInset
+        ))
+        .listRowSeparator(.hidden)
     }
 
     private var groupedActivities: [LocalPortProcessGroup] {
@@ -317,154 +313,61 @@ private struct LocalPortProcessGroup: Identifiable {
     }
 }
 
-/// 单个进程的监听行：与内存/CPU 监控页同一行语言——自绘折叠箭头 + 图标 +
-/// 名称与注记，第二行放端口列表，右缘固定一列显示暴露范围。
-/// 不用 DisclosureGroup：系统箭头的垂直对齐不受控，这里自绘折叠箭头保证居中。
-/// 展开后先给进程信息行，再每个端口一行；端口行点击打开详情面板，
-/// 打开浏览器与关闭操作也下沉到端口行（同组端口的地址与保护状态可以不同）。
 private struct LocalPortRow: View {
     @EnvironmentObject private var appModel: MacPilotModel
     let group: LocalPortProcessGroup
     @ObservedObject var model: LocalPortsModel
-    let select: (LocalPortActivity) -> Void
-    @State private var isExpanded = false
+    let select: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Button {
-                withAnimation(.easeOut(duration: 0.18)) { isExpanded.toggle() }
-            } label: {
-                labelContent
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded {
-                processRow
-                ForEach(group.activities) { activity in
-                    portRow(activity)
-                }
-            }
-        }
-    }
-
-    private var labelContent: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "chevron.forward")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            LocalPortIconView(activity: group.representative, pointSize: 26)
-            VStack(alignment: .leading, spacing: 5) {
-                labelText
-                Text(group.ports.map(String.init).joined(separator: "  "))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            scopeBadge
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(ownerLabel), \(appModel.t("localPortsGroupPortCount", group.ports.count)), \(scopeText)")
-    }
-
-    /// 标题行：进程/项目名 + 端口数 + 运行时长，注记样式与内存监控一致。
-    private var labelText: Text {
-        var text = Text(ownerLabel).font(.body.weight(.semibold))
-            + Text("  \(appModel.t("localPortsGroupPortCount", group.ports.count))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        if group.representative.process.compactUptime != nil {
-            let uptime = LocalPortErrorFormatter.uptime(
-                group.representative.process,
-                compact: true,
-                language: appModel.language
-            )
-            text = text + Text("  \(appModel.t("appRunningFor", uptime))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        return text
-    }
-
-    private var ownerLabel: String {
-        LocalPortErrorFormatter.ownerLabel(group.owner, language: appModel.language)
-    }
-
-    private var scopeText: String {
-        appModel.t(group.isLAN ? "localPortsLANScope" : "localPortsLocal")
-    }
-
-    /// 右缘固定宽度列：所有行的暴露范围在同一竖线右对齐；受保护组附一把锁。
-    private var scopeBadge: some View {
-        HStack(spacing: 4) {
-            if group.isProtected {
-                Image(systemName: "lock.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .help(LocalPortErrorFormatter.protection(group.protectionReason, language: appModel.language))
-            }
-            Text(scopeText)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(group.isLAN ? .orange : .secondary)
-        }
-        .frame(minWidth: 64, alignment: .trailing)
-    }
-
-    /// 进程信息行：左缘对齐名称列（箭头 14 + 间距 10 + 图标 26 + 间距 10 = 60）。
-    private var processRow: some View {
-        HStack(spacing: 10) {
-            Text(group.representative.process.command)
-                .font(.callout)
-                .foregroundStyle(.primary.opacity(0.78))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .layoutPriority(1)
-            Text(appModel.t("localPortsPID", String(group.representative.process.pid)))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.tertiary)
-            if let cwd = group.representative.process.cwd {
-                Text(localPortCompactPath(cwd))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: 16)
-        }
-        .padding(.leading, 60)
-        .padding(.vertical, 3)
-    }
-
-    private func portRow(_ activity: LocalPortActivity) -> some View {
-        HStack(spacing: 10) {
-            Button {
-                select(activity)
-            } label: {
-                HStack(spacing: 10) {
-                    Text(appModel.t("localPortsPort", String(activity.listener.port)))
-                        .font(.callout)
-                        .foregroundStyle(.primary.opacity(0.78))
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                    Text(activity.listener.addresses.joined(separator: ", "))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 16)
-                    Text(appModel.t(activity.scope == .lan ? "localPortsLANScope" : "localPortsLocal"))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(activity.scope == .lan ? Color.orange : Color.secondary)
+        HStack(spacing: 12) {
+            Button(action: select) {
+                HStack(spacing: 12) {
+                    LocalPortIconView(activity: group.representative)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 8) {
+                            Text(LocalPortErrorFormatter.ownerLabel(group.owner, language: appModel.language))
+                                .font(.body.weight(.semibold))
+                                .lineLimit(1)
+                            Text(group.ports.map(String.init).joined(separator: "  "))
+                                .font(.body.monospacedDigit().weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        HStack(spacing: 6) {
+                            Text(group.representative.process.command)
+                            Text("·")
+                            Text(appModel.t("localPortsPID", String(group.representative.process.pid)))
+                            if group.representative.process.compactUptime != nil {
+                                Text("·")
+                                Text(LocalPortErrorFormatter.uptime(
+                                    group.representative.process,
+                                    compact: true,
+                                    language: appModel.language
+                                ))
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        if let cwd = group.representative.process.cwd {
+                            Text(localPortCompactPath(cwd))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Text(appModel.t(group.isLAN ? "localPortsLANScope" : "localPortsLocal"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(group.isLAN ? .orange : .secondary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if let url = LocalPortURLResolver.url(
-                port: activity.listener.port,
-                addresses: activity.listener.addresses
+                port: group.representative.listener.port,
+                addresses: group.representative.listener.addresses
             ) {
                 Button {
                     NSWorkspace.shared.open(url)
@@ -475,13 +378,18 @@ private struct LocalPortRow: View {
                 .help(appModel.t("localPortsOpenBrowser"))
             }
 
-            if let protection = LocalPortCloseService.protectionReason(for: activity) {
+            if group.isProtected {
                 Image(systemName: "lock.fill")
                     .foregroundStyle(.secondary)
-                    .help(LocalPortErrorFormatter.protection(protection, language: appModel.language))
+                    .help(LocalPortErrorFormatter.protection(group.protectionReason, language: appModel.language))
             } else {
+                if model.isPreparingClose {
+                    Text(appModel.t("localPortsVerifying"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button(role: .destructive) {
-                    model.prepareClose(for: activity)
+                    model.prepareClose(for: group.representative)
                 } label: {
                     if model.isPreparingClose {
                         ProgressView().controlSize(.small)
@@ -494,8 +402,6 @@ private struct LocalPortRow: View {
                 .disabled(model.isPreparingClose || model.isClosing)
             }
         }
-        .padding(.leading, 60)
-        .padding(.vertical, 3)
     }
 }
 

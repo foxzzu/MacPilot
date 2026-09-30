@@ -15,8 +15,6 @@ final class LocalPortsModel: ObservableObject, ManagedFeature {
     /// 菜单栏子菜单的补扫有效期：与页面可见时的自动刷新同频，
     /// 让一次菜单开合最多起一轮 lsof/ps。
     static let menuRefreshInterval: TimeInterval = 10
-    /// 页面可见时的周期扫描间隔（「自动刷新」开关的节奏）。
-    private static let visibleRefreshInterval: TimeInterval = menuRefreshInterval
 
     @Published private(set) var snapshot: LocalPortSnapshot = .empty
     @Published private(set) var isRefreshing = false
@@ -49,7 +47,7 @@ final class LocalPortsModel: ObservableObject, ManagedFeature {
         generation &+= 1
         refresh()
 
-        autoRefreshTask.start(interval: .seconds(Self.visibleRefreshInterval)) { [weak self] in
+        autoRefreshTask.start(interval: .seconds(10)) { [weak self] in
             self?.refreshIfVisible()
         }
     }
@@ -88,20 +86,6 @@ final class LocalPortsModel: ObservableObject, ManagedFeature {
 
     func refreshNow() {
         refresh()
-    }
-
-    /// 页面上的「自动刷新」开关（与内存/CPU 监控页同款）。只在可见会话内生效：
-    /// 关掉仅停止周期扫描，手动「立即刷新」不受影响；重新开启先立即补一轮扫描。
-    func setAutoRefreshEnabled(_ enabled: Bool) {
-        guard isVisible else { return }
-        if enabled {
-            refresh()
-            autoRefreshTask.start(interval: .seconds(Self.visibleRefreshInterval)) { [weak self] in
-                self?.refreshIfVisible()
-            }
-        } else {
-            autoRefreshTask.stop()
-        }
     }
 
     /// Asks for a scan on behalf of the menu-bar submenu, which has data even

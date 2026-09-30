@@ -244,8 +244,6 @@ private final class LocalPortLoopbackTrustDelegate: NSObject, URLSessionDelegate
 
 struct LocalPortIconView: View {
     let activity: LocalPortActivity
-    /// 列表行用 26pt 与内存/CPU 监控的行图标一致；详情面板保持 30pt。
-    var pointSize: CGFloat = 30
     @State private var image: NSImage?
 
     var body: some View {
@@ -260,7 +258,7 @@ struct LocalPortIconView: View {
                     .foregroundStyle(.tint)
             }
         }
-        .frame(width: pointSize, height: pointSize)
+        .frame(width: 30, height: 30)
         .task(id: activity.id) {
             if let local = LocalPortIconResolver.applicationImage(for: activity) {
                 image = local
