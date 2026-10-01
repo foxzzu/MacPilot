@@ -10,7 +10,7 @@ const fs = require("fs");
 const { chromium } = require(path.join(__dirname, "node_modules", "playwright-core"));
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const FPS = 30, TOTAL = 1260;
+const FPS = 30;
 const OUT = path.join(__dirname, "..", "frames");
 
 (async () => {
@@ -27,6 +27,7 @@ const OUT = path.join(__dirname, "..", "frames");
   await page.goto("file://" + path.join(__dirname, "..", "index.html"));
   await page.waitForFunction(() => window.__READY === true, null, { timeout: 15000 });
   await page.evaluate(() => document.fonts.ready);
+  const TOTAL = await page.evaluate((fps) => Math.round(window.__DUR * fps), FPS);
 
   if (mode === "sample") {
     const ts = process.argv[3].split(",").map(Number);

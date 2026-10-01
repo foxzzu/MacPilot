@@ -282,6 +282,19 @@
   #s11Url .mono { font-size:22px; color:#e8ebdf; }
   #s11Meta { margin-top:16px; font-size:19px; color:#8a8f80; }
   #s11Footer { position:absolute; bottom:64px; font-size:17px; color:#6f7466; letter-spacing:0.12em; }
+
+  /* ---------- scene 12 : full-capability montage ---------- */
+  .mHead { position:absolute; left:180px; top:272px; font-size:24px; color:#8a8f80; letter-spacing:0.22em; }
+  .mGrid { position:absolute; left:180px; top:336px; display:grid;
+    grid-template-columns:repeat(3,500px); gap:30px; }
+  .mCard { width:500px; height:250px; border-radius:20px; background:rgba(28,31,24,0.72);
+    border:1px solid rgba(241,243,235,0.1); padding:30px; display:flex; flex-direction:column;
+    will-change:transform,opacity; }
+  .mEmoji { font-size:38px; width:72px; height:72px; border-radius:18px; background:rgba(241,243,235,0.06);
+    border:1px solid rgba(241,243,235,0.07); display:flex; align-items:center; justify-content:center;
+    margin-bottom:22px; will-change:transform; }
+  .mName { font-size:30px; font-weight:800; margin-bottom:10px; }
+  .mDesc { font-size:19px; color:#a4a99d; }
 </style>
 </head>
 <body>
@@ -296,7 +309,7 @@
     <div class="inner" id="s1Inner">
       <div id="s1Eyebrow">YOUR MAC. ON AUTOPILOT.</div>
       <div id="s1L1">少一点操作。</div>
-      <div id="s1L2">多一点<span class="accent">心流</span>。</div>
+      <div id="s1L2">多一点<span class="accent">自动</span>。</div>
       <div id="s1Sub"><b>MacPilot</b> — 让 Mac 进入自动驾驶</div>
     </div>
     <div id="s1Hint">把重复的事交给 MacPilot。</div>
@@ -329,7 +342,7 @@
   <!-- F1 BLE -->
   <div class="scene feat" id="f1">
     <div class="featText left">
-      <div class="fIndex">01 / 06 · 自动化</div>
+      <div class="fIndex">01 · 自动化</div>
       <div class="fTitle">BLE 解锁</div>
       <div class="fSub">靠近，即刻就绪。<br>离开，自动锁定。</div>
       <div class="kbd"><span class="key">iPhone</span><span class="key">Apple&nbsp;Watch</span></div>
@@ -352,7 +365,7 @@
   <!-- F2 clipboard -->
   <div class="scene feat" id="f2">
     <div class="featText right">
-      <div class="fIndex">02 / 06 · 效率工具</div>
+      <div class="fIndex">02 · 效率工具</div>
       <div class="fTitle">剪贴板历史</div>
       <div class="fSub">复制过的，都在。<br>历史随手可取，粘贴一步到位。</div>
       <div class="kbd" id="clipKbd"><span class="key">⌘</span><span class="key">⇧</span><span class="key">V</span></div>
@@ -375,7 +388,7 @@
   <!-- F3 switcher -->
   <div class="scene feat" id="f3">
     <div class="featText left">
-      <div class="fIndex">03 / 06 · 效率工具</div>
+      <div class="fIndex">03 · 效率工具</div>
       <div class="fTitle">窗口切换</div>
       <div class="fSub">按住 ⌥ Tab，<br>在应用之间滑行。</div>
       <div class="kbd" id="swKbd"><span class="key">⌥</span><span class="key">Tab</span></div>
@@ -393,7 +406,7 @@
   <!-- F4 capture -->
   <div class="scene feat" id="f4">
     <div class="featText right">
-      <div class="fIndex">04 / 06 · 效率工具</div>
+      <div class="fIndex">04 · 效率工具</div>
       <div class="fTitle">截图与标注</div>
       <div class="fSub">框选即拍，随手标注，<br>自动进入剪贴板。</div>
       <div class="kbd" id="shKbd"><span class="key">F1</span></div>
@@ -418,7 +431,7 @@
   <!-- F5 awake -->
   <div class="scene feat" id="f5">
     <div class="featText left">
-      <div class="fIndex">05 / 06 · 自动化</div>
+      <div class="fIndex">05 · 自动化</div>
       <div class="fTitle">保持唤醒</div>
       <div class="fSub">该醒着的时候，<br>绝不打盹。</div>
       <div class="kbd"><span class="key">演示</span><span class="key">下载</span><span class="key">长任务</span></div>
@@ -436,7 +449,7 @@
   <!-- F6 quit -->
   <div class="scene feat" id="f6">
     <div class="featText right">
-      <div class="fIndex">06 / 06 · 自动化</div>
+      <div class="fIndex">06 · 自动化</div>
       <div class="fTitle">闲置自动退出</div>
       <div class="fSub">后台吃内存的应用，<br>到点自动收尾。</div>
       <div class="kbd"><span class="key">规则</span><span class="key">白名单</span></div>
@@ -454,7 +467,17 @@
   <div class="scene" id="s9">
     <div id="s9Eyebrow">不止这些</div>
     <div id="s9Clip"><div id="s9Track"></div><div id="s9Track2"></div></div>
-    <div id="s9Sub">还有 画中画 · 平滑滚动 · Dock 分组 · 存储压缩 · 远程控制 · 屏幕录制 · 本地端口 …</div>
+    <div id="s9Sub">18 个模块，全部可独立开关。</div>
+  </div>
+
+  <!-- S12 montage: the remaining capabilities -->
+  <div class="scene" id="s12a">
+    <div class="mHead">效率工具，还有这些</div>
+    <div class="mGrid" id="mGridA"></div>
+  </div>
+  <div class="scene" id="s12b">
+    <div class="mHead">自动化与系统，也在菜单栏</div>
+    <div class="mGrid" id="mGridB"></div>
   </div>
 
   <!-- S10 why -->
@@ -472,7 +495,7 @@
     <div id="s11Cta"><div id="s11CtaShine"></div>为 Mac 开启自动驾驶</div>
     <div class="chip" id="s11Url"><span class="mono">macpilot.liuguofeng.com</span></div>
     <div id="s11Meta">GitHub Releases · macOS 14+ · Apple Silicon &amp; Intel</div>
-    <div id="s11Footer">BUILT FOR MAC. MADE FOR YOUR FLOW.</div>
+    <div id="s11Footer">BUILT FOR MAC.</div>
   </div>
 
   <div class="layer" id="fadeBlack"></div>
@@ -531,7 +554,7 @@ $("#shCross").innerHTML =
 const MODS = [
   ["自动化", [["退出",1],["启动",1],["保持唤醒",1],["BLE 解锁",1],["远程控制",1],["输入法",1]]],
   ["效率工具", [["剪切板",1],["窗口切换",1],["截屏与贴图",1],["画中画",1],["平滑滚动",1],["访达右键菜单",1],
-                ["Dock 分组",1],["存储压缩",1],["屏幕录制",0],["内存监控",1],["CPU 监控",1],["本地端口",0]]]
+                ["Dock 分组",1],["存储压缩",1],["屏幕录制",1],["内存监控",1],["CPU 监控",1],["本地端口",0]]]
 ];
 (function(){
   const host=$("#s2Rows"); let html="";
@@ -619,9 +642,9 @@ const QWINS=[
 })();
 const Q_C=2*Math.PI*17;
 
-/* ---------- S9 ticker content ---------- */
-(function(){
-  const seq="LESS FRICTION ↗ MORE FLOW ✳ MADE FOR MAC ✳ ";
+  /* ---------- S9 ticker ---------- */
+  (function(){
+  const seq="AUTOMATE THE REPEATS ✳ MADE FOR MAC ✳ ";
   let html="", html2="";
   for(let k=0;k<3;k++){ html+='<span class="'+(k%2?"line":"fill")+'">'+seq+"</span>"; html2+='<span>'+seq+"</span>"; }
   $("#s9Track").innerHTML=html;
@@ -633,6 +656,28 @@ const WHY=["为 Mac 原生构建","轻量常驻","重要的，留在本机","只
 $("#s10Row").innerHTML=WHY.map((t,i)=>'<div class="whyTile"><div class="n mono">0'+(i+1)+'</div><div class="t">'+t+"</div></div>").join("");
 const whyTiles=$$(".whyTile");
 
+/* ---------- S12 montage cards ---------- */
+const MONT_A=[
+  ["📌","画中画","任意窗口钉在桌面最前"],
+  ["🖱️","平滑滚动","给滚轮加上惯性"],
+  ["🗂️","访达右键菜单","常用操作一键直达"],
+  ["🚀","Dock 分组","一组应用收进一个图标"],
+  ["🗜️","存储压缩","大文件无损瘦身"],
+  ["🎥","屏幕录制","快速录下屏幕片段"]
+];
+const MONT_B=[
+  ["📱","远程控制","用 iPhone 隔空操控 Mac"],
+  ["⌨️","输入法","按应用自动切换中英文"],
+  ["⏰","定时启动","到点自动打开应用"],
+  ["🧠","内存监控","内存水位常驻菜单栏"],
+  ["⚡","CPU 监控","占用一目了然"],
+  ["🔌","本地端口","谁在占用端口，一查便知"]
+];
+$("#mGridA").innerHTML=MONT_A.map(c=>
+  '<div class="mCard"><div class="mEmoji">'+c[0]+'</div><div class="mName">'+c[1]+'</div><div class="mDesc">'+c[2]+"</div></div>").join("");
+$("#mGridB").innerHTML=MONT_B.map(c=>
+  '<div class="mCard"><div class="mEmoji">'+c[0]+'</div><div class="mName">'+c[1]+'</div><div class="mDesc">'+c[2]+"</div></div>").join("");
+
 /* ================================================================
    TIMELINE
    ================================================================ */
@@ -640,7 +685,8 @@ const SC={
   s1:[0.0,4.6], s2:[4.4,10.0],
   f1:[9.8,13.6], f2:[13.4,17.2], f3:[17.0,20.8],
   f4:[20.6,24.4], f5:[24.2,28.0], f6:[27.8,31.6],
-  s9:[31.4,33.9], s10:[33.7,36.7], s11:[36.5,42.0]
+  s12a:[31.3,36.3], s12b:[36.1,41.1],
+  s9:[40.9,43.2], s10:[43.0,46.2], s11:[46.0,51.6]
 };
 let marqW=0, marqW2=0;
 
@@ -896,6 +942,21 @@ function renderFrame(t){
     rise($("#qChip"),seg(u,3.00,3.35),14);
   }
 
+  /* ---------- S12 montage ---------- */
+  [["#s12a",SC.s12a],["#s12b",SC.s12b]].forEach(([sel,range])=>{
+    const el=$(sel), o=sceneVis(el,range,t,0.45);
+    if(o>0){
+      const u=t-range[0];
+      rise(el.querySelector(".mHead"),seg(u,0.10,0.60),20);
+      el.querySelectorAll(".mCard").forEach((c,i)=>{
+        const p=eb(seg(u,0.35+i*0.14,0.95+i*0.14));
+        c.style.opacity=clamp(p,0,1);
+        c.style.transform="translateY("+((1-Math.min(p,1))*34)+"px)";
+        c.querySelector(".mEmoji").style.transform="translateY("+(Math.sin(t*2.2+i)*3)+"px)";
+      });
+    }
+  });
+
   /* ---------- S9 ticker ---------- */
   const o9=sceneVis($("#s9"),SC.s9,t,0.4);
   if(o9>0){
@@ -938,12 +999,13 @@ function renderFrame(t){
   }
 
   /* global end fade */
-  $("#fadeBlack").style.opacity=seg(t,41.2,42.0);
+  $("#fadeBlack").style.opacity=seg(t,50.8,51.6);
 }
 
 window.__READY=false;
 renderFrame(0);
 window.renderFrame=renderFrame;
+window.__DUR=51.6;
 window.__READY=true;
 </script>
 </body>

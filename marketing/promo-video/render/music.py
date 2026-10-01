@@ -11,7 +11,7 @@ Structure (BPM 96, bar = 2.5s, 16.8 bars):
 import numpy as np, wave
 
 SR = 44100
-DUR = 42.0
+DUR = 51.6
 BPM = 96.0
 BEAT = 60.0 / BPM          # 0.625 s
 BAR = 4 * BEAT             # 2.5 s
@@ -76,23 +76,23 @@ for bar in range(nbars):
         s = pad_note(midi(m), BAR + 0.4, det)
         add(L, t0, s, 0.052); add(R, t0, s, 0.052)
     # bass eighths (bars 2..13)
-    if 2 <= bar < 14:
+    if 2 <= bar < 18:
         for k in range(8):
             s = pluck(midi(root - 12), 0.30, 0.10)
             add(L, t0 + k*BEAT/2, s, 0.16); add(R, t0 + k*BEAT/2, s, 0.16)
     # kick four-on-floor (bars 2..13)
-    if 2 <= bar < 14:
+    if 2 <= bar < 18:
         for k in range(4):
             s = kick()
             add(L, t0 + k*BEAT, s, 0.50); add(R, t0 + k*BEAT, s, 0.50)
     # hats on offbeats (bars 4..13)
-    if 4 <= bar < 14:
+    if 4 <= bar < 18:
         for k in range(4):
             s = hat()
             add(L, t0 + k*BEAT + BEAT/2, s, 0.045)
             add(R, t0 + k*BEAT + BEAT/2, s, 0.060)
     # arp 16ths (bars 6..13), alternating pan
-    if 6 <= bar < 14:
+    if 6 <= bar < 18:
         pool = notes + [m + 12 for m in notes]
         seq = [0, 4, 1, 5, 2, 6, 3, 5]
         for k in range(16):
