@@ -1,5 +1,9 @@
 # MacPilot
 
+[![GitHub Release downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmisswell%2FMacPilot%2Fdownload-stats%2Fdownloads.json&style=flat-square)](https://github.com/misswell/MacPilot/releases)
+
+Total Release asset downloads across all versions, refreshed every six hours. Repeat downloads count separately.
+
 [简体中文](README.zh-CN.md)
 
 MacPilot is a native macOS menu-bar toolkit for automation, capture, window navigation, and system utilities. It has 18 independently switchable feature modules. Turn features on from Home; turning one off stops its shortcuts and background monitoring.

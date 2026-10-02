@@ -1,0 +1,55 @@
+name: Update download statistics
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: download-statistics
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Count downloads across every release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          total="$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq '[.[][] | select(.draft == false) | .assets[] | .download_count] | add // 0')"
+          jq -n --argjson total "$total" \
+            '{schemaVersion: 1, label: "downloads", message: ($total | tostring), color: "brightgreen"}' \
+            > "$RUNNER_TEMP/downloads.json"
+
+      - name: Publish badge data on its own branch
+        run: |
+          set -euo pipefail
+          remote_branch="$(git ls-remote --heads origin download-stats)"
+          if [[ -n "$remote_branch" ]]; then
+            git fetch origin download-stats
+            git switch -C download-stats FETCH_HEAD
+          else
+            git switch --orphan download-stats
+          fi
+          cp "$RUNNER_TEMP/downloads.json" downloads.json
+          git add downloads.json
+          if git diff --cached --quiet; then
+            echo "Download statistics are unchanged"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: refresh release download statistics'
+          git push origin HEAD:refs/heads/download-stats

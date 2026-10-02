@@ -1,5 +1,9 @@
 # MacPilot
 
+[![GitHub Release 下载次数](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmisswell%2FMacPilot%2Fdownload-stats%2Fdownloads.json&style=flat-square)](https://github.com/misswell/MacPilot/releases)
+
+统计所有版本的 Release 附件下载次数，每六小时更新。重复下载会分别计数。
+
 [English](README.md)
 
 MacPilot 是一套原生 macOS 菜单栏工具，涵盖自动化、屏幕采集、窗口切换和系统管理。应用共有 **18 个可独立启用的功能模块**；可在首页逐项开关，关闭后该功能会停止自己的快捷键和后台监控。
